@@ -35,6 +35,11 @@ public class VehicleController {
         return vehicleService.getById(id);
     }
 
+    @GetMapping("/by-vin/{vin}")
+    public VehicleResponse getByVin(@PathVariable String vin) {
+        return vehicleService.getByVin(vin);
+    }
+
     @GetMapping
     public List<VehicleResponse> getAll() {
         return vehicleService.getAll();

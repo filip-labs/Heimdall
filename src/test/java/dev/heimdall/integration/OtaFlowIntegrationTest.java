@@ -278,6 +278,34 @@ class OtaFlowIntegrationTest {
                 .expectStatus().isNotFound();
     }
 
+    @Test
+    void shouldGetVehicleByVin() {
+        VehicleResponse vehicle = createVehicle(
+                "7FC00000000000008",
+                "1.3.0"
+        );
+
+        VehicleResponse resolvedVehicle = restClient.get()
+                .uri("/api/v1/vehicles/by-vin/" + vehicle.vin())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(VehicleResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertEquals(vehicle.id(), resolvedVehicle.id());
+        assertEquals(vehicle.vin(), resolvedVehicle.vin());
+        assertEquals(vehicle.softwareVersion(), resolvedVehicle.softwareVersion());
+    }
+
+    @Test
+    void shouldReturnNotFoundForMissingVehicleVin() {
+        restClient.get()
+                .uri("/api/v1/vehicles/by-vin/7FC99999999999999")
+                .exchange()
+                .expectStatus().isNotFound();
+    }
+
     private VehicleResponse createVehicle(
             String vin,
             String softwareVersion

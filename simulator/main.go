@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -13,9 +14,43 @@ import (
 	"net/http"
 	neturl "net/url"
 	"os"
+	"os/signal"
+	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 )
+
+const (
+	defaultBaseURL                = "http://localhost:8080"
+	defaultFleetSize              = 10
+	defaultInitialSoftwareVersion = "1.3.0"
+	defaultHeartbeatInterval      = 5 * time.Second
+	defaultDeploymentPollInterval = 3 * time.Second
+	vehicleRequestTimeout         = 30 * time.Second
+	installDelay                  = 2 * time.Second
+	maxVINIndex                   = 99999999999999
+)
+
+type FleetConfig struct {
+	BaseURL                string
+	FleetSize              int
+	InitialSoftwareVersion string
+	HeartbeatInterval      time.Duration
+	DeploymentPollInterval time.Duration
+}
+
+type VehicleAgent struct {
+	ID                     string
+	VIN                    string
+	SoftwareVersion        string
+	BaseURL                string
+	Client                 *http.Client
+	Downloader             *artifactDownloader
+	HeartbeatInterval      time.Duration
+	DeploymentPollInterval time.Duration
+}
 
 type Deployment struct {
 	ID                    string `json:"id"`
@@ -28,28 +63,20 @@ type Deployment struct {
 	Status                string `json:"status"`
 }
 
-var (
-	baseURL   string
-	vehicleID string
+type vehiclePayload struct {
+	VIN             string `json:"vin"`
+	SoftwareVersion string `json:"softwareVersion"`
+}
 
-	client = &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
-	downloader = artifactDownloader{
-		client:      client,
-		sleep:       time.Sleep,
-		maxAttempts: 3,
-		retryDelays: []time.Duration{
-			1 * time.Second,
-			2 * time.Second,
-		},
-	}
-)
+type vehicleResponse struct {
+	ID              string `json:"id"`
+	VIN             string `json:"vin"`
+	SoftwareVersion string `json:"softwareVersion"`
+}
 
 type artifactDownloader struct {
 	client      *http.Client
-	sleep       func(time.Duration)
+	wait        func(context.Context, time.Duration) error
 	maxAttempts int
 	retryDelays []time.Duration
 }
@@ -67,77 +94,373 @@ func (e retryableArtifactError) Unwrap() error {
 }
 
 func main() {
-	baseURL = getEnv("HEIMDALL_URL", "http://localhost:8080")
-	vehicleID = os.Getenv("VEHICLE_ID")
-
-	if vehicleID == "" {
-		log.Fatal("VEHICLE_ID environment variable is required")
+	config, err := loadFleetConfigFromEnv()
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	log.Println("Heimdall Vehicle Agent starting")
-	log.Printf("Vehicle ID: %s", vehicleID)
-	log.Printf("Control plane: %s", baseURL)
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		syscall.SIGINT,
+		syscall.SIGTERM,
+	)
+	defer stop()
 
-	if err := sendHeartbeat(); err != nil {
-		log.Printf("initial heartbeat failed: %v", err)
+	client := &http.Client{
+		Timeout: vehicleRequestTimeout,
 	}
 
-	go heartbeatLoop()
+	downloader := &artifactDownloader{
+		client:      client,
+		wait:        sleepWithContext,
+		maxAttempts: 3,
+		retryDelays: []time.Duration{
+			1 * time.Second,
+			2 * time.Second,
+		},
+	}
 
-	for {
-		deployment, err := getActiveDeployment()
+	log.Printf(
+		"fleet simulator starting with %d vehicles",
+		config.FleetSize,
+	)
 
-		if err != nil {
-			log.Printf("failed to check deployment: %v", err)
-			time.Sleep(3 * time.Second)
+	agents, failed := bootstrapFleet(
+		ctx,
+		config,
+		client,
+		downloader,
+	)
+
+	log.Printf("fleet ready: %d/%d vehicles", len(agents), config.FleetSize)
+	if failed > 0 {
+		log.Printf("fleet bootstrap failures: %d", failed)
+	}
+
+	if len(agents) == 0 {
+		log.Fatal("fleet bootstrap failed: no vehicles ready")
+	}
+
+	var wg sync.WaitGroup
+
+	for _, agent := range agents {
+		wg.Add(1)
+		go agent.run(ctx, &wg)
+	}
+
+	<-ctx.Done()
+	log.Printf("shutdown requested")
+
+	wg.Wait()
+	log.Printf("fleet simulator stopped")
+}
+
+func loadFleetConfigFromEnv() (FleetConfig, error) {
+	fleetSize, err := parsePositiveIntEnv(
+		"FLEET_SIZE",
+		defaultFleetSize,
+	)
+	if err != nil {
+		return FleetConfig{}, err
+	}
+
+	heartbeatInterval, err := parsePositiveDurationEnv(
+		"HEARTBEAT_INTERVAL",
+		defaultHeartbeatInterval,
+	)
+	if err != nil {
+		return FleetConfig{}, err
+	}
+
+	deploymentPollInterval, err := parsePositiveDurationEnv(
+		"DEPLOYMENT_POLL_INTERVAL",
+		defaultDeploymentPollInterval,
+	)
+	if err != nil {
+		return FleetConfig{}, err
+	}
+
+	initialSoftwareVersion := strings.TrimSpace(
+		getEnv("INITIAL_SOFTWARE_VERSION", defaultInitialSoftwareVersion),
+	)
+	if initialSoftwareVersion == "" {
+		return FleetConfig{}, fmt.Errorf(
+			"INITIAL_SOFTWARE_VERSION must not be empty",
+		)
+	}
+
+	return FleetConfig{
+		BaseURL: strings.TrimRight(
+			getEnv("HEIMDALL_URL", defaultBaseURL),
+			"/",
+		),
+		FleetSize:              fleetSize,
+		InitialSoftwareVersion: initialSoftwareVersion,
+		HeartbeatInterval:      heartbeatInterval,
+		DeploymentPollInterval: deploymentPollInterval,
+	}, nil
+}
+
+func parsePositiveIntEnv(name string, fallback int) (int, error) {
+	value := strings.TrimSpace(getEnv(name, strconv.Itoa(fallback)))
+
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s %q: %w", name, value, err)
+	}
+
+	if parsed <= 0 {
+		return 0, fmt.Errorf("%s must be greater than 0", name)
+	}
+
+	return parsed, nil
+}
+
+func parsePositiveDurationEnv(
+	name string,
+	fallback time.Duration,
+) (time.Duration, error) {
+	value := strings.TrimSpace(getEnv(name, fallback.String()))
+
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s %q: %w", name, value, err)
+	}
+
+	if parsed <= 0 {
+		return 0, fmt.Errorf("%s must be greater than 0", name)
+	}
+
+	return parsed, nil
+}
+
+func bootstrapFleet(
+	ctx context.Context,
+	config FleetConfig,
+	client *http.Client,
+	downloader *artifactDownloader,
+) ([]*VehicleAgent, int) {
+	agents := make([]*VehicleAgent, config.FleetSize)
+	errorsByIndex := make([]error, config.FleetSize)
+
+	var wg sync.WaitGroup
+
+	for index := 1; index <= config.FleetSize; index++ {
+		index := index
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			vin, err := generateVIN(index)
+			if err != nil {
+				errorsByIndex[index-1] = err
+				log.Printf("[bootstrap-%d] startup failed: %v", index, err)
+				return
+			}
+
+			agent := &VehicleAgent{
+				VIN:                    vin,
+				SoftwareVersion:        config.InitialSoftwareVersion,
+				BaseURL:                config.BaseURL,
+				Client:                 client,
+				Downloader:             downloader,
+				HeartbeatInterval:      config.HeartbeatInterval,
+				DeploymentPollInterval: config.DeploymentPollInterval,
+			}
+
+			if err := agent.registerOrResolve(ctx); err != nil {
+				errorsByIndex[index-1] = err
+				agent.logf("startup failed: %v", err)
+				return
+			}
+
+			agents[index-1] = agent
+		}()
+	}
+
+	wg.Wait()
+
+	readyAgents := make([]*VehicleAgent, 0, config.FleetSize)
+	failed := 0
+
+	for index, agent := range agents {
+		if agent == nil {
+			failed++
+			if errorsByIndex[index] == nil {
+				log.Printf(
+					"[bootstrap-%d] startup failed: unknown error",
+					index+1,
+				)
+			}
 			continue
 		}
 
-		if deployment != nil {
-			if err := processDeployment(*deployment); err != nil {
-				log.Printf("deployment %s failed: %v", deployment.ID, err)
-			}
+		readyAgents = append(readyAgents, agent)
+	}
+
+	return readyAgents, failed
+}
+
+func generateVIN(index int) (string, error) {
+	if index <= 0 {
+		return "", fmt.Errorf("vehicle index must be greater than 0")
+	}
+
+	if index > maxVINIndex {
+		return "", fmt.Errorf(
+			"vehicle index %d exceeds VIN capacity",
+			index,
+		)
+	}
+
+	vin := fmt.Sprintf("7FC%014d", index)
+
+	if len(vin) != 17 {
+		return "", fmt.Errorf(
+			"generated VIN %q has invalid length %d",
+			vin,
+			len(vin),
+		)
+	}
+
+	return vin, nil
+}
+
+func (a *VehicleAgent) run(ctx context.Context, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	var loops sync.WaitGroup
+
+	loops.Add(2)
+
+	go func() {
+		defer loops.Done()
+		a.heartbeatLoop(ctx)
+	}()
+
+	go func() {
+		defer loops.Done()
+		a.deploymentLoop(ctx)
+	}()
+
+	loops.Wait()
+}
+
+func (a *VehicleAgent) registerOrResolve(ctx context.Context) error {
+	response, statusCode, err := a.postVehicleRegistration(ctx)
+	if err != nil {
+		return err
+	}
+
+	switch statusCode {
+	case http.StatusCreated:
+		a.ID = response.ID
+		a.SoftwareVersion = response.SoftwareVersion
+		a.logf("registered as %s", shortID(a.ID))
+		return nil
+
+	case http.StatusConflict:
+		existingVehicle, err := a.getVehicleByVIN(ctx)
+		if err != nil {
+			return err
 		}
 
-		time.Sleep(3 * time.Second)
+		a.ID = existingVehicle.ID
+		a.SoftwareVersion = existingVehicle.SoftwareVersion
+		a.logf("reused existing vehicle %s", shortID(a.ID))
+		return nil
+
+	default:
+		return fmt.Errorf(
+			"vehicle registration returned HTTP %d",
+			statusCode,
+		)
 	}
 }
 
-func heartbeatLoop() {
-	ticker := time.NewTicker(5 * time.Second)
+func (a *VehicleAgent) heartbeatLoop(ctx context.Context) {
+	if err := a.sendHeartbeat(ctx); err != nil &&
+		!errors.Is(err, context.Canceled) {
+		a.logf("initial heartbeat failed: %v", err)
+	}
+
+	ticker := time.NewTicker(a.HeartbeatInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		if err := sendHeartbeat(); err != nil {
-			log.Printf("heartbeat failed: %v", err)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := a.sendHeartbeat(ctx); err != nil &&
+				!errors.Is(err, context.Canceled) {
+				a.logf("heartbeat failed: %v", err)
+			}
 		}
 	}
 }
 
-func sendHeartbeat() error {
+func (a *VehicleAgent) deploymentLoop(ctx context.Context) {
+	if err := a.pollDeployment(ctx); err != nil &&
+		!errors.Is(err, context.Canceled) {
+		a.logf("deployment poll failed: %v", err)
+	}
+
+	ticker := time.NewTicker(a.DeploymentPollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := a.pollDeployment(ctx); err != nil &&
+				!errors.Is(err, context.Canceled) {
+				a.logf("deployment poll failed: %v", err)
+			}
+		}
+	}
+}
+
+func (a *VehicleAgent) pollDeployment(ctx context.Context) error {
+	deployment, err := a.getActiveDeployment(ctx)
+	if err != nil || deployment == nil {
+		return err
+	}
+
+	return a.processDeployment(ctx, *deployment)
+}
+
+func (a *VehicleAgent) sendHeartbeat(ctx context.Context) error {
 	url := fmt.Sprintf(
 		"%s/api/v1/vehicles/%s/heartbeat",
-		baseURL,
-		vehicleID,
+		a.BaseURL,
+		a.ID,
 	)
 
-	req, err := http.NewRequest(http.MethodPost, url, nil)
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		url,
+		nil,
+	)
 	if err != nil {
 		return err
 	}
 
-	resp, err := client.Do(req)
+	response, err := a.Client.Do(request)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer response.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		body, _ := io.ReadAll(response.Body)
 
 		return fmt.Errorf(
 			"heartbeat returned %d: %s",
-			resp.StatusCode,
+			response.StatusCode,
 			string(body),
 		)
 	}
@@ -145,51 +468,67 @@ func sendHeartbeat() error {
 	return nil
 }
 
-func getActiveDeployment() (*Deployment, error) {
+func (a *VehicleAgent) getActiveDeployment(
+	ctx context.Context,
+) (*Deployment, error) {
 	url := fmt.Sprintf(
 		"%s/api/v1/vehicles/%s/deployments/active",
-		baseURL,
-		vehicleID,
+		a.BaseURL,
+		a.ID,
 	)
 
-	resp, err := client.Get(url)
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		url,
+		nil,
+	)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusNoContent {
+	response, err := a.Client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode == http.StatusNoContent {
 		return nil, nil
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+	if response.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(response.Body)
 
 		return nil, fmt.Errorf(
 			"deployment lookup returned %d: %s",
-			resp.StatusCode,
+			response.StatusCode,
 			string(body),
 		)
 	}
 
 	var deployment Deployment
 
-	if err := json.NewDecoder(resp.Body).Decode(&deployment); err != nil {
+	if err := json.NewDecoder(response.Body).Decode(&deployment); err != nil {
 		return nil, err
 	}
 
 	return &deployment, nil
 }
 
-func processDeployment(deployment Deployment) error {
-	log.Printf(
-		"OTA deployment detected: %s -> %s",
+func (a *VehicleAgent) processDeployment(
+	ctx context.Context,
+	deployment Deployment,
+) error {
+	a.logf(
+		"OTA detected: %s -> %s",
 		deployment.SourceSoftwareVersion,
 		deployment.TargetSoftwareVersion,
 	)
 
 	if deployment.Status == "PENDING" {
-		if err := updateDeploymentStatus(
+		if err := a.updateDeploymentStatus(
+			ctx,
 			deployment.ID,
 			"DOWNLOADING",
 			"",
@@ -206,25 +545,23 @@ func processDeployment(deployment Deployment) error {
 		deployment.Status == "DOWNLOADED" ||
 		deployment.Status == "INSTALLING" {
 
-		log.Printf("downloading artifact: %s", deployment.ArtifactURL)
-
-		path, err := downloadAndVerifyArtifact(
+		path, err := a.Downloader.downloadAndVerifyArtifact(
+			ctx,
 			deployment.ArtifactURL,
 			deployment.Checksum,
+			a.logf,
 		)
 
 		if err != nil {
-			log.Printf("artifact verification failed: %v", err)
+			a.logf("artifact processing failed: %v", err)
 
-			if failErr := updateDeploymentStatus(
+			if failErr := a.updateDeploymentStatus(
+				ctx,
 				deployment.ID,
 				"FAILED",
 				err.Error(),
-			); failErr != nil {
-				log.Printf(
-					"failed to mark deployment FAILED: %v",
-					failErr,
-				)
+			); failErr != nil && !errors.Is(failErr, context.Canceled) {
+				a.logf("failed to mark deployment FAILED: %v", failErr)
 			}
 
 			return err
@@ -233,11 +570,12 @@ func processDeployment(deployment Deployment) error {
 		artifactPath = path
 		defer os.Remove(artifactPath)
 
-		log.Printf("artifact verified successfully: %s", artifactPath)
+		a.logf("artifact verified")
 	}
 
 	if deployment.Status == "DOWNLOADING" {
-		if err := updateDeploymentStatus(
+		if err := a.updateDeploymentStatus(
+			ctx,
 			deployment.ID,
 			"DOWNLOADED",
 			"",
@@ -249,7 +587,8 @@ func processDeployment(deployment Deployment) error {
 	}
 
 	if deployment.Status == "DOWNLOADED" {
-		if err := updateDeploymentStatus(
+		if err := a.updateDeploymentStatus(
+			ctx,
 			deployment.ID,
 			"INSTALLING",
 			"",
@@ -261,14 +600,12 @@ func processDeployment(deployment Deployment) error {
 	}
 
 	if deployment.Status == "INSTALLING" {
-		log.Printf(
-			"installing verified artifact for version %s",
-			deployment.TargetSoftwareVersion,
-		)
+		if err := sleepWithContext(ctx, installDelay); err != nil {
+			return err
+		}
 
-		time.Sleep(2 * time.Second)
-
-		if err := updateDeploymentStatus(
+		if err := a.updateDeploymentStatus(
+			ctx,
 			deployment.ID,
 			"INSTALLED",
 			"",
@@ -276,37 +613,186 @@ func processDeployment(deployment Deployment) error {
 			return err
 		}
 
-		log.Printf(
-			"OTA installation completed: %s",
-			deployment.TargetSoftwareVersion,
+		a.SoftwareVersion = deployment.TargetSoftwareVersion
+		a.logf("OTA installed: %s", deployment.TargetSoftwareVersion)
+	}
+
+	return nil
+}
+
+func (a *VehicleAgent) updateDeploymentStatus(
+	ctx context.Context,
+	deploymentID string,
+	status string,
+	failureReason string,
+) error {
+	payload := map[string]string{
+		"status": status,
+	}
+
+	if failureReason != "" {
+		payload["failureReason"] = failureReason
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf(
+		"%s/api/v1/deployments/%s/status",
+		a.BaseURL,
+		deploymentID,
+	)
+
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPatch,
+		url,
+		bytes.NewBuffer(body),
+	)
+	if err != nil {
+		return err
+	}
+
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := a.Client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		responseBody, _ := io.ReadAll(response.Body)
+
+		return fmt.Errorf(
+			"status update returned %d: %s",
+			response.StatusCode,
+			string(responseBody),
 		)
 	}
 
 	return nil
 }
 
-func downloadAndVerifyArtifact(
-	artifactURL string,
-	expectedChecksum string,
-) (string, error) {
-	return downloader.downloadAndVerifyArtifact(
-		artifactURL,
-		expectedChecksum,
+func (a *VehicleAgent) postVehicleRegistration(
+	ctx context.Context,
+) (vehicleResponse, int, error) {
+	payload := vehiclePayload{
+		VIN:             a.VIN,
+		SoftwareVersion: a.SoftwareVersion,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return vehicleResponse{}, 0, err
+	}
+
+	url := fmt.Sprintf("%s/api/v1/vehicles", a.BaseURL)
+
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		url,
+		bytes.NewBuffer(body),
+	)
+	if err != nil {
+		return vehicleResponse{}, 0, err
+	}
+
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := a.Client.Do(request)
+	if err != nil {
+		return vehicleResponse{}, 0, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode == http.StatusCreated {
+		var vehicle vehicleResponse
+
+		if err := json.NewDecoder(response.Body).Decode(&vehicle); err != nil {
+			return vehicleResponse{}, 0, err
+		}
+
+		return vehicle, response.StatusCode, nil
+	}
+
+	if response.StatusCode == http.StatusConflict {
+		return vehicleResponse{}, response.StatusCode, nil
+	}
+
+	responseBody, _ := io.ReadAll(response.Body)
+
+	return vehicleResponse{}, response.StatusCode, fmt.Errorf(
+		"vehicle registration returned %d: %s",
+		response.StatusCode,
+		string(responseBody),
 	)
 }
 
-func (d artifactDownloader) downloadAndVerifyArtifact(
+func (a *VehicleAgent) getVehicleByVIN(
+	ctx context.Context,
+) (vehicleResponse, error) {
+	url := fmt.Sprintf(
+		"%s/api/v1/vehicles/by-vin/%s",
+		a.BaseURL,
+		neturl.PathEscape(a.VIN),
+	)
+
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		url,
+		nil,
+	)
+	if err != nil {
+		return vehicleResponse{}, err
+	}
+
+	response, err := a.Client.Do(request)
+	if err != nil {
+		return vehicleResponse{}, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(response.Body)
+
+		return vehicleResponse{}, fmt.Errorf(
+			"vehicle lookup returned %d: %s",
+			response.StatusCode,
+			string(body),
+		)
+	}
+
+	var vehicle vehicleResponse
+
+	if err := json.NewDecoder(response.Body).Decode(&vehicle); err != nil {
+		return vehicleResponse{}, err
+	}
+
+	return vehicle, nil
+}
+
+func (a *VehicleAgent) logf(format string, args ...any) {
+	log.Printf("[%s] %s", a.VIN, fmt.Sprintf(format, args...))
+}
+
+func (d *artifactDownloader) downloadAndVerifyArtifact(
+	ctx context.Context,
 	artifactURL string,
 	expectedChecksum string,
+	logf func(string, ...any),
 ) (string, error) {
 	for attempt := 1; attempt <= d.maxAttempts; attempt++ {
-		log.Printf(
-			"artifact download attempt %d/%d",
-			attempt,
-			d.maxAttempts,
-		)
+		if logf != nil {
+			logf("artifact download attempt %d/%d", attempt, d.maxAttempts)
+		}
 
 		path, err := d.downloadAndVerifyArtifactOnce(
+			ctx,
 			artifactURL,
 			expectedChecksum,
 		)
@@ -328,10 +814,14 @@ func (d artifactDownloader) downloadAndVerifyArtifact(
 
 		delay := d.retryDelay(attempt)
 
-		log.Printf("transient artifact download failure: %v", err)
-		log.Printf("retrying in %s", delay)
+		if logf != nil {
+			logf("transient artifact download failure: %v", err)
+			logf("retrying in %s", delay)
+		}
 
-		d.sleep(delay)
+		if err := d.wait(ctx, delay); err != nil {
+			return "", err
+		}
 	}
 
 	return "", fmt.Errorf(
@@ -340,11 +830,22 @@ func (d artifactDownloader) downloadAndVerifyArtifact(
 	)
 }
 
-func (d artifactDownloader) downloadAndVerifyArtifactOnce(
+func (d *artifactDownloader) downloadAndVerifyArtifactOnce(
+	ctx context.Context,
 	artifactURL string,
 	expectedChecksum string,
 ) (string, error) {
-	resp, err := d.client.Get(artifactURL)
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		artifactURL,
+		nil,
+	)
+	if err != nil {
+		return "", err
+	}
+
+	response, err := d.client.Do(request)
 	if err != nil {
 		downloadErr := fmt.Errorf("artifact download failed: %w", err)
 
@@ -354,19 +855,19 @@ func (d artifactDownloader) downloadAndVerifyArtifactOnce(
 
 		return "", downloadErr
 	}
-	defer resp.Body.Close()
+	defer response.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		err = fmt.Errorf(
+	if response.StatusCode != http.StatusOK {
+		statusErr := fmt.Errorf(
 			"artifact download returned HTTP %d",
-			resp.StatusCode,
+			response.StatusCode,
 		)
 
-		if isRetryableHTTPStatus(resp.StatusCode) {
-			return "", retryableArtifactError{err: err}
+		if isRetryableHTTPStatus(response.StatusCode) {
+			return "", retryableArtifactError{err: statusErr}
 		}
 
-		return "", err
+		return "", statusErr
 	}
 
 	file, err := os.CreateTemp("", "heimdall-ota-*.bin")
@@ -383,7 +884,7 @@ func (d artifactDownloader) downloadAndVerifyArtifactOnce(
 
 	if _, err := io.Copy(
 		io.MultiWriter(file, hash),
-		resp.Body,
+		response.Body,
 	); err != nil {
 		file.Close()
 		os.Remove(path)
@@ -405,9 +906,6 @@ func (d artifactDownloader) downloadAndVerifyArtifactOnce(
 
 	actualChecksum := hex.EncodeToString(hash.Sum(nil))
 
-	log.Printf("expected SHA-256: %s", expectedChecksum)
-	log.Printf("actual SHA-256:   %s", actualChecksum)
-
 	if !strings.EqualFold(actualChecksum, expectedChecksum) {
 		os.Remove(path)
 
@@ -421,12 +919,24 @@ func (d artifactDownloader) downloadAndVerifyArtifactOnce(
 	return path, nil
 }
 
-func (d artifactDownloader) retryDelay(attempt int) time.Duration {
+func (d *artifactDownloader) retryDelay(attempt int) time.Duration {
 	if attempt <= 0 || attempt > len(d.retryDelays) {
 		return 0
 	}
 
 	return d.retryDelays[attempt-1]
+}
+
+func sleepWithContext(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func isRetryableArtifactError(err error) bool {
@@ -459,59 +969,12 @@ func isRetryableHTTPStatus(statusCode int) bool {
 	}
 }
 
-func updateDeploymentStatus(
-	deploymentID string,
-	status string,
-	failureReason string,
-) error {
-
-	payload := map[string]string{
-		"status": status,
+func shortID(id string) string {
+	if len(id) <= 8 {
+		return id
 	}
 
-	if failureReason != "" {
-		payload["failureReason"] = failureReason
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-
-	url := fmt.Sprintf(
-		"%s/api/v1/deployments/%s/status",
-		baseURL,
-		deploymentID,
-	)
-
-	req, err := http.NewRequest(
-		http.MethodPatch,
-		url,
-		bytes.NewBuffer(body),
-	)
-	if err != nil {
-		return err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		responseBody, _ := io.ReadAll(resp.Body)
-
-		return fmt.Errorf(
-			"status update returned %d: %s",
-			resp.StatusCode,
-			string(responseBody),
-		)
-	}
-
-	return nil
+	return id[:8]
 }
 
 func getEnv(key string, fallback string) string {

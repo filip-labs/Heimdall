@@ -65,6 +65,16 @@ public class VehicleService {
     }
 
     @Transactional(readOnly = true)
+    public VehicleResponse getByVin(String vin) {
+        return vehicleRepository.findByVin(vin)
+                .map(VehicleResponse::from)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Vehicle not found"
+                ));
+    }
+
+    @Transactional(readOnly = true)
     public List<VehicleResponse> getAll() {
         return vehicleRepository.findAll()
                 .stream()
