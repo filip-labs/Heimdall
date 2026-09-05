@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: heimdall
+
+  datasource:
+    url: jdbc:postgresql://localhost:5433/heimdall
+    username: heimdall
+    password: heimdall
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  flyway:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
