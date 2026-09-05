@@ -1,5 +1,6 @@
 package dev.heimdall.deployment;
 
+import dev.heimdall.rollout.RolloutStage;
 import dev.heimdall.vehicle.SoftwareRelease;
 import dev.heimdall.vehicle.SoftwareReleaseRepository;
 import dev.heimdall.vehicle.Vehicle;
@@ -66,7 +67,40 @@ public class DeploymentService {
             );
         }
 
-        Deployment deployment = new Deployment(vehicle, release);
+        return DeploymentResponse.from(createDeployment(vehicle, release, null));
+    }
+
+    public Deployment createForRolloutStage(
+            Vehicle vehicle,
+            SoftwareRelease release,
+            RolloutStage rolloutStage
+    ) {
+        if (vehicle.getSoftwareVersion().equals(release.getVersion())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Vehicle is already running this software version"
+            );
+        }
+
+        if (deploymentRepository.existsByVehicle_IdAndStatusIn(
+                vehicle.getId(),
+                ACTIVE_STATUSES
+        )) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Vehicle already has an active deployment"
+            );
+        }
+
+        return createDeployment(vehicle, release, rolloutStage);
+    }
+
+    private Deployment createDeployment(
+            Vehicle vehicle,
+            SoftwareRelease release,
+            RolloutStage rolloutStage
+    ) {
+        Deployment deployment = new Deployment(vehicle, release, rolloutStage);
         Deployment savedDeployment = deploymentRepository.save(deployment);
 
         deploymentEventRepository.save(new DeploymentEvent(
@@ -76,7 +110,7 @@ public class DeploymentService {
                 null
         ));
 
-        return DeploymentResponse.from(savedDeployment);
+        return savedDeployment;
     }
 
     @Transactional(readOnly = true)
@@ -163,7 +197,7 @@ public class DeploymentService {
                 .toList();
     }
 
-    private static final Set<DeploymentStatus> ACTIVE_STATUSES =
+    public static final Set<DeploymentStatus> ACTIVE_STATUSES =
             EnumSet.of(
                     DeploymentStatus.PENDING,
                     DeploymentStatus.DOWNLOADING,

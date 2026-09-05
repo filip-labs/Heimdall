@@ -271,6 +271,63 @@
       ]
     },
     {
+      "name": "Rollouts",
+      "item": [
+        {
+          "name": "Create Rollout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"releaseId\": \"{{releaseId}}\",\n  \"stages\": [5, 25, 50, 100],\n  \"failureThresholdPercent\": 5.0\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/rollouts"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Rollout created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.environment.set(\"rolloutId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Rollouts",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/rollouts"
+          }
+        },
+        {
+          "name": "Get Rollout",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/rollouts/{{rolloutId}}"
+          }
+        },
+        {
+          "name": "Get Rollout Stages",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/rollouts/{{rolloutId}}/stages"
+          }
+        }
+      ]
+    },
+    {
       "name": "System",
       "item": [
         {

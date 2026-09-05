@@ -1,5 +1,6 @@
 package dev.heimdall.deployment;
 
+import dev.heimdall.rollout.RolloutStage;
 import dev.heimdall.vehicle.SoftwareRelease;
 import dev.heimdall.vehicle.Vehicle;
 import jakarta.persistence.*;
@@ -21,6 +22,10 @@ public class Deployment {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "release_id", nullable = false)
     private SoftwareRelease release;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "rollout_stage_id")
+    private RolloutStage rolloutStage;
 
     @Column(name = "source_software_version", nullable = false, length = 50)
     private String sourceSoftwareVersion;
@@ -45,10 +50,20 @@ public class Deployment {
         this.id = UUID.randomUUID();
         this.vehicle = vehicle;
         this.release = release;
+        this.rolloutStage = null;
         this.sourceSoftwareVersion = vehicle.getSoftwareVersion();
         this.status = DeploymentStatus.PENDING;
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
+    }
+
+    public Deployment(
+            Vehicle vehicle,
+            SoftwareRelease release,
+            RolloutStage rolloutStage
+    ) {
+        this(vehicle, release);
+        this.rolloutStage = rolloutStage;
     }
 
     public void transitionTo(DeploymentStatus nextStatus, String failureReason) {
@@ -104,6 +119,10 @@ public class Deployment {
 
     public SoftwareRelease getRelease() {
         return release;
+    }
+
+    public RolloutStage getRolloutStage() {
+        return rolloutStage;
     }
 
     public String getSourceSoftwareVersion() {

@@ -18,4 +18,27 @@ public interface DeploymentRepository
             UUID vehicleId,
             Collection<DeploymentStatus> statuses
     );
+
+    boolean existsByVehicle_IdInAndStatusIn(
+            Collection<UUID> vehicleIds,
+            Collection<DeploymentStatus> statuses
+    );
+
+    long countByRolloutStage_Id(UUID rolloutStageId);
+
+    long countByRolloutStage_IdAndStatus(
+            UUID rolloutStageId,
+            DeploymentStatus status
+    );
+
+    long countByRolloutStage_IdAndStatusIn(
+            UUID rolloutStageId,
+            Collection<DeploymentStatus> statuses
+    );
+
+    long countByRolloutStage_Rollout_IdAndVehicle_IdAndRelease_Id(
+            UUID rolloutId,
+            UUID vehicleId,
+            UUID releaseId
+    );
 }
