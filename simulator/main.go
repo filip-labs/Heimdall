@@ -2,22 +2,27 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
 type Deployment struct {
-	ID                     string `json:"id"`
-	VehicleID              string `json:"vehicleId"`
-	VIN                    string `json:"vin"`
-	CurrentSoftwareVersion string `json:"currentSoftwareVersion"`
-	TargetSoftwareVersion  string `json:"targetSoftwareVersion"`
-	Status                 string `json:"status"`
+	ID                    string `json:"id"`
+	VehicleID             string `json:"vehicleId"`
+	VIN                   string `json:"vin"`
+	SourceSoftwareVersion string `json:"sourceSoftwareVersion"`
+	TargetSoftwareVersion string `json:"targetSoftwareVersion"`
+	ArtifactURL           string `json:"artifactUrl"`
+	Checksum              string `json:"checksum"`
+	Status                string `json:"status"`
 }
 
 var (
@@ -25,7 +30,7 @@ var (
 	vehicleID string
 
 	client = &http.Client{
-		Timeout: 5 * time.Second,
+		Timeout: 30 * time.Second,
 	}
 )
 
@@ -58,11 +63,7 @@ func main() {
 
 		if deployment != nil {
 			if err := processDeployment(*deployment); err != nil {
-				log.Printf(
-					"deployment %s failed: %v",
-					deployment.ID,
-					err,
-				)
+				log.Printf("deployment %s failed: %v", deployment.ID, err)
 			}
 		}
 
@@ -151,62 +152,189 @@ func getActiveDeployment() (*Deployment, error) {
 func processDeployment(deployment Deployment) error {
 	log.Printf(
 		"OTA deployment detected: %s -> %s",
-		deployment.CurrentSoftwareVersion,
+		deployment.SourceSoftwareVersion,
 		deployment.TargetSoftwareVersion,
 	)
 
-	states := []string{
-		"DOWNLOADING",
-		"DOWNLOADED",
-		"INSTALLING",
-		"INSTALLED",
-	}
-
-	startIndex := 0
-
-	switch deployment.Status {
-	case "PENDING":
-		startIndex = 0
-	case "DOWNLOADING":
-		startIndex = 1
-	case "DOWNLOADED":
-		startIndex = 2
-	case "INSTALLING":
-		startIndex = 3
-	default:
-		return nil
-	}
-
-	for i := startIndex; i < len(states); i++ {
-		state := states[i]
-
-		log.Printf("deployment %s -> %s", deployment.ID, state)
-
-		if err := updateDeploymentStatus(deployment.ID, state); err != nil {
+	if deployment.Status == "PENDING" {
+		if err := updateDeploymentStatus(
+			deployment.ID,
+			"DOWNLOADING",
+			"",
+		); err != nil {
 			return err
 		}
 
-		switch state {
-		case "DOWNLOADING":
-			time.Sleep(4 * time.Second)
-		case "DOWNLOADED":
-			time.Sleep(2 * time.Second)
-		case "INSTALLING":
-			time.Sleep(4 * time.Second)
-		}
+		deployment.Status = "DOWNLOADING"
 	}
 
-	log.Printf(
-		"OTA installation completed: %s",
-		deployment.TargetSoftwareVersion,
-	)
+	var artifactPath string
+
+	if deployment.Status == "DOWNLOADING" ||
+		deployment.Status == "DOWNLOADED" ||
+		deployment.Status == "INSTALLING" {
+
+		log.Printf("downloading artifact: %s", deployment.ArtifactURL)
+
+		path, err := downloadAndVerifyArtifact(
+			deployment.ArtifactURL,
+			deployment.Checksum,
+		)
+
+		if err != nil {
+			log.Printf("artifact verification failed: %v", err)
+
+			if failErr := updateDeploymentStatus(
+				deployment.ID,
+				"FAILED",
+				err.Error(),
+			); failErr != nil {
+				log.Printf(
+					"failed to mark deployment FAILED: %v",
+					failErr,
+				)
+			}
+
+			return err
+		}
+
+		artifactPath = path
+		defer os.Remove(artifactPath)
+
+		log.Printf("artifact verified successfully: %s", artifactPath)
+	}
+
+	if deployment.Status == "DOWNLOADING" {
+		if err := updateDeploymentStatus(
+			deployment.ID,
+			"DOWNLOADED",
+			"",
+		); err != nil {
+			return err
+		}
+
+		deployment.Status = "DOWNLOADED"
+	}
+
+	if deployment.Status == "DOWNLOADED" {
+		if err := updateDeploymentStatus(
+			deployment.ID,
+			"INSTALLING",
+			"",
+		); err != nil {
+			return err
+		}
+
+		deployment.Status = "INSTALLING"
+	}
+
+	if deployment.Status == "INSTALLING" {
+		log.Printf(
+			"installing verified artifact for version %s",
+			deployment.TargetSoftwareVersion,
+		)
+
+		time.Sleep(2 * time.Second)
+
+		if err := updateDeploymentStatus(
+			deployment.ID,
+			"INSTALLED",
+			"",
+		); err != nil {
+			return err
+		}
+
+		log.Printf(
+			"OTA installation completed: %s",
+			deployment.TargetSoftwareVersion,
+		)
+	}
 
 	return nil
 }
 
-func updateDeploymentStatus(deploymentID string, status string) error {
+func downloadAndVerifyArtifact(
+	artifactURL string,
+	expectedChecksum string,
+) (string, error) {
+
+	resp, err := client.Get(artifactURL)
+	if err != nil {
+		return "", fmt.Errorf("artifact download failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf(
+			"artifact download returned HTTP %d",
+			resp.StatusCode,
+		)
+	}
+
+	file, err := os.CreateTemp("", "heimdall-ota-*.bin")
+	if err != nil {
+		return "", fmt.Errorf(
+			"failed to create temporary artifact file: %w",
+			err,
+		)
+	}
+
+	path := file.Name()
+
+	hash := sha256.New()
+
+	if _, err := io.Copy(
+		io.MultiWriter(file, hash),
+		resp.Body,
+	); err != nil {
+		file.Close()
+		os.Remove(path)
+
+		return "", fmt.Errorf(
+			"failed to store artifact: %w",
+			err,
+		)
+	}
+
+	if err := file.Close(); err != nil {
+		os.Remove(path)
+
+		return "", fmt.Errorf(
+			"failed to close artifact file: %w",
+			err,
+		)
+	}
+
+	actualChecksum := hex.EncodeToString(hash.Sum(nil))
+
+	log.Printf("expected SHA-256: %s", expectedChecksum)
+	log.Printf("actual SHA-256:   %s", actualChecksum)
+
+	if !strings.EqualFold(actualChecksum, expectedChecksum) {
+		os.Remove(path)
+
+		return "", fmt.Errorf(
+			"checksum mismatch: expected %s but got %s",
+			expectedChecksum,
+			actualChecksum,
+		)
+	}
+
+	return path, nil
+}
+
+func updateDeploymentStatus(
+	deploymentID string,
+	status string,
+	failureReason string,
+) error {
+
 	payload := map[string]string{
 		"status": status,
+	}
+
+	if failureReason != "" {
+		payload["failureReason"] = failureReason
 	}
 
 	body, err := json.Marshal(payload)

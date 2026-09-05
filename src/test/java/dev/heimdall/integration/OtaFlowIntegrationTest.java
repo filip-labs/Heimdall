@@ -80,11 +80,20 @@ class OtaFlowIntegrationTest {
                 DeploymentStatus.PENDING,
                 deployment.status()
         );
+        assertEquals("1.0.0", deployment.sourceSoftwareVersion());
 
         updateStatus(deployment.id(), "DOWNLOADING");
         updateStatus(deployment.id(), "DOWNLOADED");
         updateStatus(deployment.id(), "INSTALLING");
         updateStatus(deployment.id(), "INSTALLED");
+
+        DeploymentResponse completedDeployment = restClient.get()
+                .uri("/api/v1/deployments/" + deployment.id())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(DeploymentResponse.class)
+                .returnResult()
+                .getResponseBody();
 
         VehicleResponse updatedVehicle = restClient.get()
                 .uri("/api/v1/vehicles/" + vehicle.id())
@@ -98,6 +107,9 @@ class OtaFlowIntegrationTest {
                 "1.1.0",
                 updatedVehicle.softwareVersion()
         );
+        assertEquals("1.0.0", completedDeployment.sourceSoftwareVersion());
+        assertEquals("1.1.0", completedDeployment.targetSoftwareVersion());
+        assertEquals(DeploymentStatus.INSTALLED, completedDeployment.status());
     }
 
     private void updateStatus(java.util.UUID deploymentId, String status) {

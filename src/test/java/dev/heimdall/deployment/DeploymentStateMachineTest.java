@@ -29,6 +29,7 @@ class DeploymentStateMachineTest {
         Deployment deployment = createDeployment();
 
         assertEquals(DeploymentStatus.PENDING, deployment.getStatus());
+        assertEquals("1.0.0", deployment.getSourceSoftwareVersion());
 
         deployment.transitionTo(DeploymentStatus.DOWNLOADING, null);
         assertEquals(DeploymentStatus.DOWNLOADING, deployment.getStatus());
@@ -123,5 +124,27 @@ class DeploymentStateMachineTest {
                         null
                 )
         );
+    }
+
+    @Test
+    void shouldPreserveSourceSoftwareVersionAfterVehicleUpgrade() {
+        Vehicle vehicle = new Vehicle(
+                "7FC00000000000001",
+                "1.0.0"
+        );
+
+        SoftwareRelease release = new SoftwareRelease(
+                "1.1.0",
+                "Test release",
+                "https://updates.heimdall.dev/1.1.0.bin",
+                "abc123"
+        );
+
+        Deployment deployment = new Deployment(vehicle, release);
+
+        vehicle.installSoftwareVersion("1.1.0");
+
+        assertEquals("1.0.0", deployment.getSourceSoftwareVersion());
+        assertEquals("1.1.0", vehicle.getSoftwareVersion());
     }
 }

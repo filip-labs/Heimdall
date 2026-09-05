@@ -8,10 +8,12 @@ public record DeploymentResponse(
 
         UUID vehicleId,
         String vin,
-        String currentSoftwareVersion,
+        String sourceSoftwareVersion,
 
         UUID releaseId,
         String targetSoftwareVersion,
+        String artifactUrl,
+        String checksum,
 
         DeploymentStatus status,
         String failureReason,
@@ -26,10 +28,12 @@ public record DeploymentResponse(
 
                 deployment.getVehicle().getId(),
                 deployment.getVehicle().getVin(),
-                deployment.getVehicle().getSoftwareVersion(),
+                deployment.getSourceSoftwareVersion(),
 
                 deployment.getRelease().getId(),
                 deployment.getRelease().getVersion(),
+                deployment.getRelease().getArtifactUrl(),
+                deployment.getRelease().getChecksum(),
 
                 deployment.getStatus(),
                 deployment.getFailureReason(),

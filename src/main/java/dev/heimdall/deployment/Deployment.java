@@ -22,6 +22,9 @@ public class Deployment {
     @JoinColumn(name = "release_id", nullable = false)
     private SoftwareRelease release;
 
+    @Column(name = "source_software_version", nullable = false, length = 50)
+    private String sourceSoftwareVersion;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private DeploymentStatus status;
@@ -42,6 +45,7 @@ public class Deployment {
         this.id = UUID.randomUUID();
         this.vehicle = vehicle;
         this.release = release;
+        this.sourceSoftwareVersion = vehicle.getSoftwareVersion();
         this.status = DeploymentStatus.PENDING;
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
@@ -100,6 +104,10 @@ public class Deployment {
 
     public SoftwareRelease getRelease() {
         return release;
+    }
+
+    public String getSourceSoftwareVersion() {
+        return sourceSoftwareVersion;
     }
 
     public DeploymentStatus getStatus() {
