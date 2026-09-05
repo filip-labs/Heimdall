@@ -25,6 +25,11 @@ public class VehicleController {
         return vehicleService.create(request);
     }
 
+    @PostMapping("/{id}/heartbeat")
+    public VehicleResponse heartbeat(@PathVariable UUID id) {
+        return vehicleService.heartbeat(id);
+    }
+
     @GetMapping("/{id}")
     public VehicleResponse getById(@PathVariable UUID id) {
         return vehicleService.getById(id);

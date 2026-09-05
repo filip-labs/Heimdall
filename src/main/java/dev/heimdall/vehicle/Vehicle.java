@@ -35,11 +35,31 @@ public class Vehicle {
     }
 
     public Vehicle(String vin, String softwareVersion) {
+        Instant now = Instant.now();
+
         this.id = UUID.randomUUID();
         this.vin = vin;
         this.softwareVersion = softwareVersion;
         this.connectivityStatus = ConnectivityStatus.OFFLINE;
-        this.createdAt = Instant.now();
+        this.createdAt = now;
+        this.updatedAt = now;
+    }
+
+    public void heartbeat() {
+        Instant now = Instant.now();
+
+        this.connectivityStatus = ConnectivityStatus.ONLINE;
+        this.lastSeenAt = now;
+        this.updatedAt = now;
+    }
+
+    public void markOffline() {
+        this.connectivityStatus = ConnectivityStatus.OFFLINE;
+        this.updatedAt = Instant.now();
+    }
+
+    public void installSoftwareVersion(String softwareVersion) {
+        this.softwareVersion = softwareVersion;
         this.updatedAt = Instant.now();
     }
 
@@ -69,10 +89,5 @@ public class Vehicle {
 
     public Instant getUpdatedAt() {
         return updatedAt;
-    }
-
-    public void installSoftwareVersion(String softwareVersion) {
-        this.softwareVersion = softwareVersion;
-        this.updatedAt = Instant.now();
     }
 }

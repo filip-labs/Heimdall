@@ -23,3 +23,8 @@ management:
     web:
       exposure:
         include: health,info
+
+heimdall:
+  vehicle:
+    offline-threshold-seconds: 30
+    offline-check-interval-ms: 10000
