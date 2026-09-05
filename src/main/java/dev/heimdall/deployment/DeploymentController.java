@@ -30,6 +30,11 @@ public class DeploymentController {
         return deploymentService.getById(id);
     }
 
+    @GetMapping("/{id}/events")
+    public List<DeploymentEventResponse> getEvents(@PathVariable UUID id) {
+        return deploymentService.getEvents(id);
+    }
+
     @GetMapping
     public List<DeploymentResponse> getAll() {
         return deploymentService.getAll();

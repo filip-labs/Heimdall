@@ -19,15 +19,18 @@ import java.util.UUID;
 public class DeploymentService {
 
     private final DeploymentRepository deploymentRepository;
+    private final DeploymentEventRepository deploymentEventRepository;
     private final VehicleRepository vehicleRepository;
     private final SoftwareReleaseRepository releaseRepository;
 
     public DeploymentService(
             DeploymentRepository deploymentRepository,
+            DeploymentEventRepository deploymentEventRepository,
             VehicleRepository vehicleRepository,
             SoftwareReleaseRepository releaseRepository
     ) {
         this.deploymentRepository = deploymentRepository;
+        this.deploymentEventRepository = deploymentEventRepository;
         this.vehicleRepository = vehicleRepository;
         this.releaseRepository = releaseRepository;
     }
@@ -64,10 +67,32 @@ public class DeploymentService {
         }
 
         Deployment deployment = new Deployment(vehicle, release);
+        Deployment savedDeployment = deploymentRepository.save(deployment);
 
-        return DeploymentResponse.from(
-                deploymentRepository.save(deployment)
-        );
+        deploymentEventRepository.save(new DeploymentEvent(
+                savedDeployment,
+                null,
+                DeploymentStatus.PENDING,
+                null
+        ));
+
+        return DeploymentResponse.from(savedDeployment);
+    }
+
+    @Transactional(readOnly = true)
+    public List<DeploymentEventResponse> getEvents(UUID deploymentId) {
+        if (!deploymentRepository.existsById(deploymentId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Deployment not found"
+            );
+        }
+
+        return deploymentEventRepository
+                .findAllByDeployment_IdOrderByCreatedAtAsc(deploymentId)
+                .stream()
+                .map(DeploymentEventResponse::from)
+                .toList();
     }
 
     @Transactional
@@ -80,6 +105,12 @@ public class DeploymentService {
                         HttpStatus.NOT_FOUND,
                         "Deployment not found"
                 ));
+
+        if (deployment.getStatus() == request.status()) {
+            return DeploymentResponse.from(deployment);
+        }
+
+        DeploymentStatus previousStatus = deployment.getStatus();
 
         try {
             deployment.transitionTo(
@@ -97,6 +128,13 @@ public class DeploymentService {
                     e.getMessage()
             );
         }
+
+        deploymentEventRepository.save(new DeploymentEvent(
+                deployment,
+                previousStatus,
+                deployment.getStatus(),
+                deployment.getFailureReason()
+        ));
 
         if (request.status() == DeploymentStatus.INSTALLED) {
             deployment.getVehicle().installSoftwareVersion(

@@ -5,10 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"strings"
 	"time"
@@ -32,7 +35,36 @@ var (
 	client = &http.Client{
 		Timeout: 30 * time.Second,
 	}
+
+	downloader = artifactDownloader{
+		client:      client,
+		sleep:       time.Sleep,
+		maxAttempts: 3,
+		retryDelays: []time.Duration{
+			1 * time.Second,
+			2 * time.Second,
+		},
+	}
 )
+
+type artifactDownloader struct {
+	client      *http.Client
+	sleep       func(time.Duration)
+	maxAttempts int
+	retryDelays []time.Duration
+}
+
+type retryableArtifactError struct {
+	err error
+}
+
+func (e retryableArtifactError) Error() string {
+	return e.err.Error()
+}
+
+func (e retryableArtifactError) Unwrap() error {
+	return e.err
+}
 
 func main() {
 	baseURL = getEnv("HEIMDALL_URL", "http://localhost:8080")
@@ -257,18 +289,84 @@ func downloadAndVerifyArtifact(
 	artifactURL string,
 	expectedChecksum string,
 ) (string, error) {
+	return downloader.downloadAndVerifyArtifact(
+		artifactURL,
+		expectedChecksum,
+	)
+}
 
-	resp, err := client.Get(artifactURL)
+func (d artifactDownloader) downloadAndVerifyArtifact(
+	artifactURL string,
+	expectedChecksum string,
+) (string, error) {
+	for attempt := 1; attempt <= d.maxAttempts; attempt++ {
+		log.Printf(
+			"artifact download attempt %d/%d",
+			attempt,
+			d.maxAttempts,
+		)
+
+		path, err := d.downloadAndVerifyArtifactOnce(
+			artifactURL,
+			expectedChecksum,
+		)
+		if err == nil {
+			return path, nil
+		}
+
+		if !isRetryableArtifactError(err) {
+			return "", err
+		}
+
+		if attempt == d.maxAttempts {
+			return "", fmt.Errorf(
+				"artifact download failed after %d attempts: %w",
+				d.maxAttempts,
+				err,
+			)
+		}
+
+		delay := d.retryDelay(attempt)
+
+		log.Printf("transient artifact download failure: %v", err)
+		log.Printf("retrying in %s", delay)
+
+		d.sleep(delay)
+	}
+
+	return "", fmt.Errorf(
+		"artifact download failed after %d attempts",
+		d.maxAttempts,
+	)
+}
+
+func (d artifactDownloader) downloadAndVerifyArtifactOnce(
+	artifactURL string,
+	expectedChecksum string,
+) (string, error) {
+	resp, err := d.client.Get(artifactURL)
 	if err != nil {
-		return "", fmt.Errorf("artifact download failed: %w", err)
+		downloadErr := fmt.Errorf("artifact download failed: %w", err)
+
+		if isRetryableRequestError(err) {
+			return "", retryableArtifactError{err: downloadErr}
+		}
+
+		return "", downloadErr
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf(
+		err = fmt.Errorf(
 			"artifact download returned HTTP %d",
 			resp.StatusCode,
 		)
+
+		if isRetryableHTTPStatus(resp.StatusCode) {
+			return "", retryableArtifactError{err: err}
+		}
+
+		return "", err
 	}
 
 	file, err := os.CreateTemp("", "heimdall-ota-*.bin")
@@ -321,6 +419,44 @@ func downloadAndVerifyArtifact(
 	}
 
 	return path, nil
+}
+
+func (d artifactDownloader) retryDelay(attempt int) time.Duration {
+	if attempt <= 0 || attempt > len(d.retryDelays) {
+		return 0
+	}
+
+	return d.retryDelays[attempt-1]
+}
+
+func isRetryableArtifactError(err error) bool {
+	var retryableErr retryableArtifactError
+
+	return errors.As(err, &retryableErr)
+}
+
+func isRetryableRequestError(err error) bool {
+	var netErr net.Error
+
+	if errors.As(err, &netErr) {
+		return true
+	}
+
+	var urlErr *neturl.Error
+
+	return errors.As(err, &urlErr) && urlErr.Op != "parse"
+}
+
+func isRetryableHTTPStatus(statusCode int) bool {
+	switch statusCode {
+	case http.StatusInternalServerError,
+		http.StatusBadGateway,
+		http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
+	}
 }
 
 func updateDeploymentStatus(
