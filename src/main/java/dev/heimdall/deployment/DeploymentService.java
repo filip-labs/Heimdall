@@ -8,6 +8,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import java.util.EnumSet;
+import java.util.Optional;
+import java.util.Set;
 
 import java.util.List;
 import java.util.UUID;
@@ -47,6 +50,16 @@ public class DeploymentService {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
                     "Vehicle is already running this software version"
+            );
+        }
+
+        if (deploymentRepository.existsByVehicle_IdAndStatusIn(
+                vehicle.getId(),
+                ACTIVE_STATUSES
+        )) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Vehicle already has an active deployment"
             );
         }
 
@@ -110,5 +123,30 @@ public class DeploymentService {
                 .stream()
                 .map(DeploymentResponse::from)
                 .toList();
+    }
+
+    private static final Set<DeploymentStatus> ACTIVE_STATUSES =
+            EnumSet.of(
+                    DeploymentStatus.PENDING,
+                    DeploymentStatus.DOWNLOADING,
+                    DeploymentStatus.DOWNLOADED,
+                    DeploymentStatus.INSTALLING
+            );
+
+    @Transactional(readOnly = true)
+    public Optional<DeploymentResponse> getActiveForVehicle(UUID vehicleId) {
+        if (!vehicleRepository.existsById(vehicleId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Vehicle not found"
+            );
+        }
+
+        return deploymentRepository
+                .findFirstByVehicle_IdAndStatusInOrderByCreatedAtAsc(
+                        vehicleId,
+                        ACTIVE_STATUSES
+                )
+                .map(DeploymentResponse::from);
     }
 }
