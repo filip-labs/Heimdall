@@ -1,0 +1,299 @@
+{
+  "info": {
+    "name": "Heimdall",
+    "description": "API collection for the Heimdall Connected Vehicle OTA Platform.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Vehicles",
+      "item": [
+        {
+          "name": "Create Vehicle",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vin\": \"7FC00000000000010\",\n  \"softwareVersion\": \"1.0.0\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/vehicles"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Vehicle created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const response = pm.response.json();",
+                  "pm.environment.set('vehicleId', response.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Vehicles",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/vehicles"
+          }
+        },
+        {
+          "name": "Get Vehicle",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/vehicles/{{vehicleId}}"
+          }
+        },
+        {
+          "name": "Heartbeat",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/vehicles/{{vehicleId}}/heartbeat"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Vehicle is online', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().connectivityStatus).to.eql('ONLINE');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Releases",
+      "item": [
+        {
+          "name": "Create Release",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": \"2.0.0\",\n  \"description\": \"Postman OTA test release\",\n  \"artifactUrl\": \"http://localhost:8080/artifacts/1.3.0.bin\",\n  \"checksum\": \"caf8cd040deaf2e3ad6b89de2bd06057792102312b9677b72a35251089e39755\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/releases"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Release created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const response = pm.response.json();",
+                  "pm.environment.set('releaseId', response.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Releases",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/releases"
+          }
+        },
+        {
+          "name": "Get Release",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/releases/{{releaseId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Deployments",
+      "item": [
+        {
+          "name": "Create Deployment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleId\": \"{{vehicleId}}\",\n  \"releaseId\": \"{{releaseId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/deployments"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Deployment created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const response = pm.response.json();",
+                  "pm.environment.set('deploymentId', response.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Deployments",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/deployments"
+          }
+        },
+        {
+          "name": "Get Deployment",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/deployments/{{deploymentId}}"
+          }
+        },
+        {
+          "name": "Get Active Deployment For Vehicle",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/vehicles/{{vehicleId}}/deployments/active"
+          }
+        },
+        {
+          "name": "Set DOWNLOADING",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DOWNLOADING\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/deployments/{{deploymentId}}/status"
+          }
+        },
+        {
+          "name": "Set DOWNLOADED",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DOWNLOADED\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/deployments/{{deploymentId}}/status"
+          }
+        },
+        {
+          "name": "Set INSTALLING",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"INSTALLING\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/deployments/{{deploymentId}}/status"
+          }
+        },
+        {
+          "name": "Set INSTALLED",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"INSTALLED\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/deployments/{{deploymentId}}/status"
+          }
+        },
+        {
+          "name": "Set FAILED",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"FAILED\",\n  \"failureReason\": \"Manual Postman failure test\"\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/deployments/{{deploymentId}}/status"
+          }
+        }
+      ]
+    },
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Heimdall is healthy', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().status).to.eql('UP');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
