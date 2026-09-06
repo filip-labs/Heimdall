@@ -36,9 +36,4 @@ public interface DeploymentRepository
             Collection<DeploymentStatus> statuses
     );
 
-    long countByRolloutStage_Rollout_IdAndVehicle_IdAndRelease_Id(
-            UUID rolloutId,
-            UUID vehicleId,
-            UUID releaseId
-    );
 }

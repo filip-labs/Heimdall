@@ -3,7 +3,7 @@ package dev.heimdall.integration;
 import dev.heimdall.deployment.DeploymentEventResponse;
 import dev.heimdall.deployment.DeploymentResponse;
 import dev.heimdall.deployment.DeploymentStatus;
-import dev.heimdall.vehicle.SoftwareReleaseResponse;
+import dev.heimdall.release.SoftwareReleaseResponse;
 import dev.heimdall.vehicle.VehicleResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

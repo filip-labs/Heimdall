@@ -1,8 +1,8 @@
 package dev.heimdall.deployment;
 
 import dev.heimdall.rollout.RolloutStage;
-import dev.heimdall.vehicle.SoftwareRelease;
-import dev.heimdall.vehicle.SoftwareReleaseRepository;
+import dev.heimdall.release.SoftwareRelease;
+import dev.heimdall.release.SoftwareReleaseRepository;
 import dev.heimdall.vehicle.Vehicle;
 import dev.heimdall.vehicle.VehicleRepository;
 import org.springframework.http.HttpStatus;

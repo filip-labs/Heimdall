@@ -1,6 +1,6 @@
 package dev.heimdall.rollout;
 
-import dev.heimdall.vehicle.SoftwareRelease;
+import dev.heimdall.release.SoftwareRelease;
 import jakarta.persistence.*;
 
 import java.math.BigDecimal;

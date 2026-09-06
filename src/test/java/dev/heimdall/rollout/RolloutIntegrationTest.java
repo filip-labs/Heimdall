@@ -2,7 +2,7 @@ package dev.heimdall.rollout;
 
 import dev.heimdall.deployment.DeploymentResponse;
 import dev.heimdall.deployment.DeploymentStatus;
-import dev.heimdall.vehicle.SoftwareReleaseResponse;
+import dev.heimdall.release.SoftwareReleaseResponse;
 import dev.heimdall.vehicle.VehicleResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,7 +43,7 @@ class RolloutIntegrationTest {
     private RestTestClient restClient;
 
     @Autowired
-    private RolloutService rolloutService;
+    private RolloutEvaluator rolloutEvaluator;
 
     @Autowired
     private RolloutTargetRepository rolloutTargetRepository;
@@ -101,7 +101,7 @@ class RolloutIntegrationTest {
         assertEquals(0, stages.get(2).deploymentCount());
 
         completePendingDeployments(release.id(), 2, DeploymentStatus.INSTALLED);
-        rolloutService.evaluateRollout(rollout.id());
+        rolloutEvaluator.evaluateRollout(rollout.id());
         stages = getStages(rollout.id());
 
         assertEquals(RolloutStageStatus.COMPLETED, stages.get(0).status());
@@ -109,7 +109,7 @@ class RolloutIntegrationTest {
         assertEquals(3, stages.get(1).deploymentCount());
 
         completePendingDeployments(release.id(), 3, DeploymentStatus.INSTALLED);
-        rolloutService.evaluateRollout(rollout.id());
+        rolloutEvaluator.evaluateRollout(rollout.id());
         stages = getStages(rollout.id());
 
         assertEquals(RolloutStageStatus.COMPLETED, stages.get(1).status());
@@ -129,11 +129,11 @@ class RolloutIntegrationTest {
         );
 
         completePendingDeployments(release.id(), 2, DeploymentStatus.INSTALLED);
-        rolloutService.evaluateRollout(rollout.id());
+        rolloutEvaluator.evaluateRollout(rollout.id());
         completePendingDeployments(release.id(), 3, DeploymentStatus.INSTALLED);
-        rolloutService.evaluateRollout(rollout.id());
+        rolloutEvaluator.evaluateRollout(rollout.id());
         completePendingDeployments(release.id(), 5, DeploymentStatus.INSTALLED);
-        rolloutService.evaluateRollout(rollout.id());
+        rolloutEvaluator.evaluateRollout(rollout.id());
 
         RolloutResponse completed = getRollout(rollout.id());
         List<DeploymentResponse> deployments = deploymentsForRelease(release.id());
@@ -161,7 +161,7 @@ class RolloutIntegrationTest {
 
         completePendingDeployments(release.id(), 4, DeploymentStatus.INSTALLED);
         completePendingDeployments(release.id(), 1, DeploymentStatus.FAILED);
-        rolloutService.evaluateRollout(rollout.id());
+        rolloutEvaluator.evaluateRollout(rollout.id());
 
         List<RolloutStageResponse> stages = getStages(rollout.id());
 
@@ -184,7 +184,7 @@ class RolloutIntegrationTest {
 
         completePendingDeployments(release.id(), 3, DeploymentStatus.INSTALLED);
         completePendingDeployments(release.id(), 2, DeploymentStatus.FAILED);
-        rolloutService.evaluateRollout(rollout.id());
+        rolloutEvaluator.evaluateRollout(rollout.id());
 
         List<RolloutStageResponse> stages = getStages(rollout.id());
 

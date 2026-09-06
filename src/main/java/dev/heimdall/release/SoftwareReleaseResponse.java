@@ -1,4 +1,4 @@
-package dev.heimdall.vehicle;
+package dev.heimdall.release;
 
 import java.time.Instant;
 import java.util.UUID;
