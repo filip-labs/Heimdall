@@ -102,6 +102,7 @@ Heimdall currently includes:
 - Deployment event audit trail.
 - Vehicle restart/reuse by deterministic VIN.
 - Staged rollout with target snapshots and health gates.
+- Operator-controlled rollout pause, resume, and cancel.
 - Pessimistic database locking for rollout stage advancement.
 
 ## Fleet Simulation
@@ -149,6 +150,8 @@ For 100 target vehicles this means:
 Rollout targets are selected once at creation time from vehicles not already running the target release version, ordered by VIN ascending. Vehicles registered later are not added to the rollout.
 
 Each stage creates deployments only for the incremental cohort. When all deployments in the current stage are terminal, Heimdall evaluates that stage's failure rate. If the failure rate is greater than the configured threshold, the current stage is marked `FAILED` and the rollout is `PAUSED`. If the failure rate is less than or equal to the threshold, the rollout advances to the next stage or completes.
+
+Operators can pause, resume, or cancel a rollout with `POST /api/v1/rollouts/{id}/pause`, `POST /api/v1/rollouts/{id}/resume`, and `POST /api/v1/rollouts/{id}/cancel`. Pause and cancel stop future rollout progression without modifying existing deployments. Cancel is permanent and does not roll back already-installed vehicles.
 
 A manual demo can validate the health gate by configuring one canary to fail deterministically:
 
@@ -288,7 +291,9 @@ M4 Reliability + Audit                               Done
 M5 Fleet Simulator                                   Done
 M6A Staged Fleet Rollouts                            Done
 M6B Deterministic Failure Injection + Pause Demo     Done
-M7 Rollback & Recovery
+M7A Manual Rollout Controls                          Done
+M7B Rollback Deployments                             Next
+M7C Automatic Rollback Policy
 M8 Observability
 M9 Kafka / Event-driven Architecture
 M10 Scalability Testing

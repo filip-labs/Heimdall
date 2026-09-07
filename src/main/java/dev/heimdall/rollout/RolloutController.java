@@ -12,9 +12,14 @@ import java.util.UUID;
 public class RolloutController {
 
     private final RolloutService rolloutService;
+    private final RolloutControlService rolloutControlService;
 
-    public RolloutController(RolloutService rolloutService) {
+    public RolloutController(
+            RolloutService rolloutService,
+            RolloutControlService rolloutControlService
+    ) {
         this.rolloutService = rolloutService;
+        this.rolloutControlService = rolloutControlService;
     }
 
     @PostMapping
@@ -38,5 +43,20 @@ public class RolloutController {
     @GetMapping("/{id}/stages")
     public List<RolloutStageResponse> getStages(@PathVariable UUID id) {
         return rolloutService.getStages(id);
+    }
+
+    @PostMapping("/{id}/pause")
+    public RolloutResponse pause(@PathVariable UUID id) {
+        return rolloutControlService.pause(id);
+    }
+
+    @PostMapping("/{id}/resume")
+    public RolloutResponse resume(@PathVariable UUID id) {
+        return rolloutControlService.resume(id);
+    }
+
+    @PostMapping("/{id}/cancel")
+    public RolloutResponse cancel(@PathVariable UUID id) {
+        return rolloutControlService.cancel(id);
     }
 }

@@ -214,6 +214,270 @@ class RolloutIntegrationTest {
                 .expectStatus().isEqualTo(409);
     }
 
+    @Test
+    void shouldPauseRunningRollout() {
+        SoftwareReleaseResponse release = createRelease("2.16.0");
+        createVehicles("7FC16000000000", 10, "1.0.0");
+        RolloutResponse rollout = createRollout(
+                release.id(),
+                List.of(50, 100),
+                BigDecimal.valueOf(5.0)
+        );
+
+        RolloutResponse paused = controlRollout(rollout.id(), "pause");
+
+        assertEquals(RolloutStatus.PAUSED, paused.status());
+        assertEquals(RolloutStatus.PAUSED, getRollout(rollout.id()).status());
+    }
+
+    @Test
+    void shouldPauseRolloutIdempotently() {
+        SoftwareReleaseResponse release = createRelease("2.17.0");
+        createVehicles("7FC17000000000", 10, "1.0.0");
+        RolloutResponse rollout = createRollout(
+                release.id(),
+                List.of(50, 100),
+                BigDecimal.valueOf(5.0)
+        );
+
+        controlRollout(rollout.id(), "pause");
+        RolloutResponse pausedAgain = controlRollout(rollout.id(), "pause");
+
+        assertEquals(RolloutStatus.PAUSED, pausedAgain.status());
+        assertEquals(5, getStages(rollout.id()).getFirst().deploymentCount());
+    }
+
+    @Test
+    void shouldResumePausedRollout() {
+        SoftwareReleaseResponse release = createRelease("2.18.0");
+        createVehicles("7FC18000000000", 10, "1.0.0");
+        RolloutResponse rollout = createRollout(
+                release.id(),
+                List.of(50, 100),
+                BigDecimal.valueOf(5.0)
+        );
+        controlRollout(rollout.id(), "pause");
+
+        RolloutResponse resumed = controlRollout(rollout.id(), "resume");
+
+        assertEquals(RolloutStatus.RUNNING, resumed.status());
+        assertEquals(RolloutStatus.RUNNING, getRollout(rollout.id()).status());
+    }
+
+    @Test
+    void shouldResumeRunningRolloutIdempotentlyWithoutDuplicateDeployments() {
+        SoftwareReleaseResponse release = createRelease("2.19.0");
+        createVehicles("7FC19000000000", 10, "1.0.0");
+        RolloutResponse rollout = createRollout(
+                release.id(),
+                List.of(50, 100),
+                BigDecimal.valueOf(5.0)
+        );
+
+        RolloutResponse resumed = controlRollout(rollout.id(), "resume");
+
+        assertEquals(RolloutStatus.RUNNING, resumed.status());
+        assertEquals(5, getStages(rollout.id()).getFirst().deploymentCount());
+        assertEquals(5, deploymentsForRelease(release.id()).size());
+    }
+
+    @Test
+    void shouldCancelRunningRollout() {
+        SoftwareReleaseResponse release = createRelease("2.20.0");
+        createVehicles("7FC20000000000", 10, "1.0.0");
+        RolloutResponse rollout = createRollout(
+                release.id(),
+                List.of(50, 100),
+                BigDecimal.valueOf(5.0)
+        );
+
+        RolloutResponse cancelled = controlRollout(rollout.id(), "cancel");
+
+        assertEquals(RolloutStatus.CANCELLED, cancelled.status());
+        assertEquals(RolloutStatus.CANCELLED, getRollout(rollout.id()).status());
+    }
+
+    @Test
+    void shouldCancelPausedRollout() {
+        SoftwareReleaseResponse release = createRelease("2.21.0");
+        createVehicles("7FC21000000000", 10, "1.0.0");
+        RolloutResponse rollout = createRollout(
+                release.id(),
+                List.of(50, 100),
+                BigDecimal.valueOf(5.0)
+        );
+        controlRollout(rollout.id(), "pause");
+
+        RolloutResponse cancelled = controlRollout(rollout.id(), "cancel");
+
+        assertEquals(RolloutStatus.CANCELLED, cancelled.status());
+        assertEquals(RolloutStatus.CANCELLED, getRollout(rollout.id()).status());
+    }
+
+    @Test
+    void shouldCancelRolloutIdempotently() {
+        SoftwareReleaseResponse release = createRelease("2.22.0");
+        createVehicles("7FC22000000000", 10, "1.0.0");
+        RolloutResponse rollout = createRollout(
+                release.id(),
+                List.of(50, 100),
+                BigDecimal.valueOf(5.0)
+        );
+
+        controlRollout(rollout.id(), "cancel");
+        RolloutResponse cancelledAgain = controlRollout(rollout.id(), "cancel");
+
+        assertEquals(RolloutStatus.CANCELLED, cancelledAgain.status());
+        assertEquals(5, deploymentsForRelease(release.id()).size());
+    }
+
+    @Test
+    void shouldRejectCompletedRolloutControlActions() {
+        SoftwareReleaseResponse release = createRelease("2.23.0");
+        createVehicles("7FC23000000000", 5, "1.0.0");
+        RolloutResponse rollout = createRollout(
+                release.id(),
+                List.of(100),
+                BigDecimal.valueOf(5.0)
+        );
+        completePendingDeployments(release.id(), 5, DeploymentStatus.INSTALLED);
+        rolloutEvaluator.evaluateRollout(rollout.id());
+
+        assertEquals(RolloutStatus.COMPLETED, getRollout(rollout.id()).status());
+        assertControlConflict(rollout.id(), "pause");
+        assertControlConflict(rollout.id(), "resume");
+        assertControlConflict(rollout.id(), "cancel");
+    }
+
+    @Test
+    void shouldRejectCancelledRolloutPauseAndResume() {
+        SoftwareReleaseResponse release = createRelease("2.24.0");
+        createVehicles("7FC24000000000", 10, "1.0.0");
+        RolloutResponse rollout = createRollout(
+                release.id(),
+                List.of(50, 100),
+                BigDecimal.valueOf(5.0)
+        );
+        controlRollout(rollout.id(), "cancel");
+
+        assertControlConflict(rollout.id(), "pause");
+        assertControlConflict(rollout.id(), "resume");
+    }
+
+    @Test
+    void shouldReturnNotFoundForMissingRolloutControlAction() {
+        restClient.post()
+                .uri("/api/v1/rollouts/" + UUID.randomUUID() + "/pause")
+                .exchange()
+                .expectStatus().isNotFound();
+    }
+
+    @Test
+    void shouldNotProgressPausedRolloutWhenCurrentStageDeploymentsFinish() {
+        SoftwareReleaseResponse release = createRelease("2.25.0");
+        createVehicles("7FC25000000000", 10, "1.0.0");
+        RolloutResponse rollout = createRollout(
+                release.id(),
+                List.of(50, 100),
+                BigDecimal.valueOf(5.0)
+        );
+
+        controlRollout(rollout.id(), "pause");
+        completePendingDeployments(release.id(), 5, DeploymentStatus.INSTALLED);
+        rolloutEvaluator.evaluateRollout(rollout.id());
+
+        List<RolloutStageResponse> stages = getStages(rollout.id());
+        assertEquals(RolloutStatus.PAUSED, getRollout(rollout.id()).status());
+        assertEquals(RolloutStageStatus.RUNNING, stages.get(0).status());
+        assertEquals(RolloutStageStatus.PENDING, stages.get(1).status());
+        assertEquals(0, stages.get(1).deploymentCount());
+        assertEquals(5, deploymentsForRelease(release.id()).size());
+    }
+
+    @Test
+    void shouldResumeAndContinuePausedRolloutWithoutDuplicateDeployments() {
+        SoftwareReleaseResponse release = createRelease("2.26.0");
+        createVehicles("7FC26000000000", 10, "1.0.0");
+        RolloutResponse rollout = createRollout(
+                release.id(),
+                List.of(50, 100),
+                BigDecimal.valueOf(5.0)
+        );
+
+        controlRollout(rollout.id(), "pause");
+        completePendingDeployments(release.id(), 5, DeploymentStatus.INSTALLED);
+        controlRollout(rollout.id(), "resume");
+        rolloutEvaluator.evaluateRollout(rollout.id());
+        rolloutEvaluator.evaluateRollout(rollout.id());
+
+        List<RolloutStageResponse> stages = getStages(rollout.id());
+        assertEquals(RolloutStatus.RUNNING, getRollout(rollout.id()).status());
+        assertEquals(RolloutStageStatus.COMPLETED, stages.get(0).status());
+        assertEquals(RolloutStageStatus.RUNNING, stages.get(1).status());
+        assertEquals(5, stages.get(1).deploymentCount());
+        assertEquals(10, deploymentsForRelease(release.id()).size());
+    }
+
+    @Test
+    void shouldNotProgressCancelledRolloutWhenCurrentStageDeploymentsFinish() {
+        SoftwareReleaseResponse release = createRelease("2.27.0");
+        createVehicles("7FC27000000000", 10, "1.0.0");
+        RolloutResponse rollout = createRollout(
+                release.id(),
+                List.of(50, 100),
+                BigDecimal.valueOf(5.0)
+        );
+
+        controlRollout(rollout.id(), "cancel");
+        completePendingDeployments(release.id(), 5, DeploymentStatus.INSTALLED);
+        rolloutEvaluator.evaluateRollout(rollout.id());
+
+        List<RolloutStageResponse> stages = getStages(rollout.id());
+        assertEquals(RolloutStatus.CANCELLED, getRollout(rollout.id()).status());
+        assertEquals(RolloutStageStatus.RUNNING, stages.get(0).status());
+        assertEquals(RolloutStageStatus.PENDING, stages.get(1).status());
+        assertEquals(0, stages.get(1).deploymentCount());
+        assertEquals(5, deploymentsForRelease(release.id()).size());
+    }
+
+    @Test
+    void shouldLeaveExistingDeploymentUntouchedWhenPaused() {
+        SoftwareReleaseResponse release = createRelease("2.28.0");
+        createVehicles("7FC28000000000", 10, "1.0.0");
+        RolloutResponse rollout = createRollout(
+                release.id(),
+                List.of(50, 100),
+                BigDecimal.valueOf(5.0)
+        );
+        UUID deploymentId = deploymentsForRelease(release.id()).getFirst().id();
+
+        controlRollout(rollout.id(), "pause");
+
+        assertEquals(
+                DeploymentStatus.PENDING,
+                getDeployment(deploymentId).status()
+        );
+    }
+
+    @Test
+    void shouldLeaveExistingDeploymentUntouchedWhenCancelled() {
+        SoftwareReleaseResponse release = createRelease("2.29.0");
+        createVehicles("7FC29000000000", 10, "1.0.0");
+        RolloutResponse rollout = createRollout(
+                release.id(),
+                List.of(50, 100),
+                BigDecimal.valueOf(5.0)
+        );
+        UUID deploymentId = deploymentsForRelease(release.id()).getFirst().id();
+
+        controlRollout(rollout.id(), "cancel");
+
+        assertEquals(
+                DeploymentStatus.PENDING,
+                getDeployment(deploymentId).status()
+        );
+    }
+
     private List<VehicleResponse> createVehicles(
             String vinPrefix,
             int count,
@@ -303,6 +567,33 @@ class RolloutIntegrationTest {
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(RolloutResponse.class)
+                .returnResult()
+                .getResponseBody();
+    }
+
+    private RolloutResponse controlRollout(UUID rolloutId, String action) {
+        return restClient.post()
+                .uri("/api/v1/rollouts/" + rolloutId + "/" + action)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(RolloutResponse.class)
+                .returnResult()
+                .getResponseBody();
+    }
+
+    private void assertControlConflict(UUID rolloutId, String action) {
+        restClient.post()
+                .uri("/api/v1/rollouts/" + rolloutId + "/" + action)
+                .exchange()
+                .expectStatus().isEqualTo(409);
+    }
+
+    private DeploymentResponse getDeployment(UUID deploymentId) {
+        return restClient.get()
+                .uri("/api/v1/deployments/" + deploymentId)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(DeploymentResponse.class)
                 .returnResult()
                 .getResponseBody();
     }

@@ -63,7 +63,48 @@ public class Rollout {
     }
 
     public void pause() {
+        if (this.status == RolloutStatus.PAUSED) {
+            return;
+        }
+
+        if (this.status != RolloutStatus.RUNNING) {
+            throw new IllegalStateException(
+                    "Rollout cannot be paused from status " + this.status
+            );
+        }
+
         this.status = RolloutStatus.PAUSED;
+        this.updatedAt = Instant.now();
+    }
+
+    public void resume() {
+        if (this.status == RolloutStatus.RUNNING) {
+            return;
+        }
+
+        if (this.status != RolloutStatus.PAUSED) {
+            throw new IllegalStateException(
+                    "Rollout cannot be resumed from status " + this.status
+            );
+        }
+
+        this.status = RolloutStatus.RUNNING;
+        this.updatedAt = Instant.now();
+    }
+
+    public void cancel() {
+        if (this.status == RolloutStatus.CANCELLED) {
+            return;
+        }
+
+        if (this.status != RolloutStatus.RUNNING &&
+                this.status != RolloutStatus.PAUSED) {
+            throw new IllegalStateException(
+                    "Rollout cannot be cancelled from status " + this.status
+            );
+        }
+
+        this.status = RolloutStatus.CANCELLED;
         this.updatedAt = Instant.now();
     }
 

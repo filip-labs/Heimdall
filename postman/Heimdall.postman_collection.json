@@ -312,6 +312,27 @@
           }
         },
         {
+          "name": "Pause Rollout",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/rollouts/{{rolloutId}}/pause"
+          }
+        },
+        {
+          "name": "Resume Rollout",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/rollouts/{{rolloutId}}/resume"
+          }
+        },
+        {
+          "name": "Cancel Rollout",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/rollouts/{{rolloutId}}/cancel"
+          }
+        },
+        {
           "name": "Get Rollout",
           "request": {
             "method": "GET",
