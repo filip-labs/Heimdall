@@ -11,9 +11,14 @@ import java.util.UUID;
 public class RolloutControlService {
 
     private final RolloutRepository rolloutRepository;
+    private final RolloutStageRepository rolloutStageRepository;
 
-    public RolloutControlService(RolloutRepository rolloutRepository) {
+    public RolloutControlService(
+            RolloutRepository rolloutRepository,
+            RolloutStageRepository rolloutStageRepository
+    ) {
         this.rolloutRepository = rolloutRepository;
+        this.rolloutStageRepository = rolloutStageRepository;
     }
 
     @Transactional
@@ -23,7 +28,10 @@ public class RolloutControlService {
 
     @Transactional
     public RolloutResponse resume(UUID rolloutId) {
-        return controlRollout(rolloutId, Rollout::resume);
+        return controlRollout(rolloutId, rollout -> {
+            validateCurrentStageIsResumable(rollout);
+            rollout.resume();
+        });
     }
 
     @Transactional
@@ -51,6 +59,25 @@ public class RolloutControlService {
         }
 
         return RolloutResponse.from(rollout);
+    }
+
+    private void validateCurrentStageIsResumable(Rollout rollout) {
+        if (rollout.getStatus() != RolloutStatus.PAUSED) {
+            return;
+        }
+
+        RolloutStage currentStage = rolloutStageRepository
+                .findByRollout_IdAndStageIndex(
+                        rollout.getId(),
+                        rollout.getCurrentStageIndex()
+                )
+                .orElseThrow(() -> new IllegalStateException("Current rollout stage not found"));
+
+        if (currentStage.getStatus() == RolloutStageStatus.FAILED) {
+            throw new IllegalStateException(
+                    "Rollout cannot be resumed because the current stage has failed"
+            );
+        }
     }
 
     @FunctionalInterface

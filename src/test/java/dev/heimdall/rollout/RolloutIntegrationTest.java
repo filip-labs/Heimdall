@@ -195,6 +195,43 @@ class RolloutIntegrationTest {
     }
 
     @Test
+    void shouldRejectResumeWhenCurrentStageFailedHealthGate() {
+        SoftwareReleaseResponse release = createRelease("2.14.1");
+        createVehicles("7FC14100000000", 10, "1.0.0");
+
+        RolloutResponse rollout = createRollout(
+                release.id(),
+                List.of(50, 100),
+                BigDecimal.valueOf(20.0)
+        );
+
+        completePendingDeployments(release.id(), 3, DeploymentStatus.INSTALLED);
+        completePendingDeployments(release.id(), 2, DeploymentStatus.FAILED);
+        rolloutEvaluator.evaluateRollout(rollout.id());
+
+        List<RolloutStageResponse> stages = getStages(rollout.id());
+        assertEquals(RolloutStatus.PAUSED, getRollout(rollout.id()).status());
+        assertEquals(RolloutStageStatus.FAILED, stages.get(0).status());
+        assertEquals(RolloutStageStatus.PENDING, stages.get(1).status());
+
+        assertControlConflict(rollout.id(), "resume");
+
+        stages = getStages(rollout.id());
+        assertEquals(RolloutStatus.PAUSED, getRollout(rollout.id()).status());
+        assertEquals(RolloutStageStatus.FAILED, stages.get(0).status());
+        assertEquals(RolloutStageStatus.PENDING, stages.get(1).status());
+        assertEquals(0, stages.get(1).deploymentCount());
+
+        rolloutEvaluator.evaluateRollout(rollout.id());
+
+        stages = getStages(rollout.id());
+        assertEquals(RolloutStatus.PAUSED, getRollout(rollout.id()).status());
+        assertEquals(RolloutStageStatus.FAILED, stages.get(0).status());
+        assertEquals(RolloutStageStatus.PENDING, stages.get(1).status());
+        assertEquals(0, stages.get(1).deploymentCount());
+    }
+
+    @Test
     void shouldRejectRolloutWhenTargetVehicleHasActiveDeployment() {
         VehicleResponse vehicle = createVehicle("7FC15000000000000", "1.0.0");
         SoftwareReleaseResponse manualRelease = createRelease("2.15.0");
