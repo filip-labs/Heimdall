@@ -123,6 +123,7 @@ class OtaFlowIntegrationTest {
                 deployment.id(),
                 "DOWNLOADING"
         );
+        DeploymentResponse persistedUpdate = getDeployment(deployment.id());
         DeploymentResponse secondUpdate = updateStatus(
                 deployment.id(),
                 "DOWNLOADING"
@@ -130,7 +131,7 @@ class OtaFlowIntegrationTest {
 
         assertEquals(DeploymentStatus.DOWNLOADING, firstUpdate.status());
         assertEquals(DeploymentStatus.DOWNLOADING, secondUpdate.status());
-        assertEquals(firstUpdate.updatedAt(), secondUpdate.updatedAt());
+        assertEquals(persistedUpdate.updatedAt(), secondUpdate.updatedAt());
         assertEventHistory(
                 deployment.id(),
                 new ExpectedEvent(null, DeploymentStatus.PENDING, null),
@@ -154,11 +155,12 @@ class OtaFlowIntegrationTest {
         updateStatus(deployment.id(), "DOWNLOADING");
         updateStatus(deployment.id(), "DOWNLOADED");
         updateStatus(deployment.id(), "INSTALLING");
-        DeploymentResponse installed = updateStatus(deployment.id(), "INSTALLED");
+        updateStatus(deployment.id(), "INSTALLED");
+        DeploymentResponse persistedInstalled = getDeployment(deployment.id());
         DeploymentResponse installedAgain = updateStatus(deployment.id(), "INSTALLED");
 
         assertEquals(DeploymentStatus.INSTALLED, installedAgain.status());
-        assertEquals(installed.updatedAt(), installedAgain.updatedAt());
+        assertEquals(persistedInstalled.updatedAt(), installedAgain.updatedAt());
         assertEventHistory(
                 deployment.id(),
                 new ExpectedEvent(null, DeploymentStatus.PENDING, null),
@@ -195,11 +197,12 @@ class OtaFlowIntegrationTest {
         DeploymentResponse deployment = createDeployment(vehicle.id(), release.id());
 
         updateStatus(deployment.id(), "DOWNLOADING");
-        DeploymentResponse failed = updateStatus(
+        updateStatus(
                 deployment.id(),
                 "FAILED",
                 "Download timed out"
         );
+        DeploymentResponse persistedFailed = getDeployment(deployment.id());
         DeploymentResponse failedAgain = updateStatus(
                 deployment.id(),
                 "FAILED",
@@ -208,7 +211,7 @@ class OtaFlowIntegrationTest {
 
         assertEquals(DeploymentStatus.FAILED, failedAgain.status());
         assertEquals("Download timed out", failedAgain.failureReason());
-        assertEquals(failed.updatedAt(), failedAgain.updatedAt());
+        assertEquals(persistedFailed.updatedAt(), failedAgain.updatedAt());
         assertEventHistory(
                 deployment.id(),
                 new ExpectedEvent(null, DeploymentStatus.PENDING, null),
@@ -351,6 +354,16 @@ class OtaFlowIntegrationTest {
                 ))
                 .exchange()
                 .expectStatus().isCreated()
+                .expectBody(DeploymentResponse.class)
+                .returnResult()
+                .getResponseBody();
+    }
+
+    private DeploymentResponse getDeployment(UUID deploymentId) {
+        return restClient.get()
+                .uri("/api/v1/deployments/" + deploymentId)
+                .exchange()
+                .expectStatus().isOk()
                 .expectBody(DeploymentResponse.class)
                 .returnResult()
                 .getResponseBody();
