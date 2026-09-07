@@ -17,6 +17,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.time.Instant;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -309,6 +311,216 @@ class OtaFlowIntegrationTest {
                 .expectStatus().isNotFound();
     }
 
+    @Test
+    void shouldCreateRollbackDeploymentToOriginalSourceVersion() {
+        SoftwareReleaseResponse previousRelease = createRelease("2.0.1");
+        SoftwareReleaseResponse targetRelease = createRelease("2.1.1");
+        VehicleResponse vehicle = createVehicle("7FC00000000000009", "2.0.1");
+        DeploymentResponse original = createDeployment(vehicle.id(), targetRelease.id());
+        installDeployment(original.id());
+
+        DeploymentResponse rollback = rollbackDeployment(original.id());
+
+        assertEquals(vehicle.id(), rollback.vehicleId());
+        assertEquals(previousRelease.id(), rollback.releaseId());
+        assertEquals("2.1.1", rollback.sourceSoftwareVersion());
+        assertEquals("2.0.1", rollback.targetSoftwareVersion());
+        assertEquals(DeploymentStatus.PENDING, rollback.status());
+        assertEquals(original.id(), rollback.rollbackOfDeploymentId());
+    }
+
+    @Test
+    void shouldInstallRollbackThroughNormalOtaFlow() {
+        SoftwareReleaseResponse previousRelease = createRelease("2.0.2");
+        SoftwareReleaseResponse targetRelease = createRelease("2.1.2");
+        VehicleResponse vehicle = createVehicle("7FC00000000000010", "2.0.2");
+        DeploymentResponse original = createDeployment(vehicle.id(), targetRelease.id());
+        installDeployment(original.id());
+
+        DeploymentResponse rollback = rollbackDeployment(original.id());
+        installDeployment(rollback.id());
+
+        VehicleResponse rolledBackVehicle = getVehicle(vehicle.id());
+        DeploymentResponse installedRollback = getDeployment(rollback.id());
+
+        assertEquals(previousRelease.id(), installedRollback.releaseId());
+        assertEquals("2.0.2", rolledBackVehicle.softwareVersion());
+        assertEquals(DeploymentStatus.INSTALLED, installedRollback.status());
+        assertEquals(original.id(), installedRollback.rollbackOfDeploymentId());
+    }
+
+    @Test
+    void shouldKeepSeparateRollbackEventHistoryAndOriginalHistoryImmutable() {
+        SoftwareReleaseResponse previousRelease = createRelease("2.0.3");
+        SoftwareReleaseResponse targetRelease = createRelease("2.1.3");
+        VehicleResponse vehicle = createVehicle("7FC00000000000011", "2.0.3");
+        DeploymentResponse original = createDeployment(vehicle.id(), targetRelease.id());
+        installDeployment(original.id());
+        DeploymentResponse originalBeforeRollback = getDeployment(original.id());
+        List<DeploymentEventResponse> originalEventsBeforeRollback =
+                getDeploymentEvents(original.id());
+
+        DeploymentResponse rollback = rollbackDeployment(original.id());
+        installDeployment(rollback.id());
+
+        DeploymentResponse originalAfterRollback = getDeployment(original.id());
+        List<DeploymentEventResponse> originalEventsAfterRollback =
+                getDeploymentEvents(original.id());
+
+        assertEquals(previousRelease.id(), rollback.releaseId());
+        assertEquals(originalBeforeRollback.status(), originalAfterRollback.status());
+        assertEquals(originalBeforeRollback.failureReason(), originalAfterRollback.failureReason());
+        assertEquals(
+                originalBeforeRollback.sourceSoftwareVersion(),
+                originalAfterRollback.sourceSoftwareVersion()
+        );
+        assertEquals(originalBeforeRollback.releaseId(), originalAfterRollback.releaseId());
+        assertEquals(originalBeforeRollback.createdAt(), originalAfterRollback.createdAt());
+        assertEquals(originalEventsBeforeRollback.size(), originalEventsAfterRollback.size());
+        assertEventHistory(
+                rollback.id(),
+                new ExpectedEvent(null, DeploymentStatus.PENDING, null),
+                new ExpectedEvent(
+                        DeploymentStatus.PENDING,
+                        DeploymentStatus.DOWNLOADING,
+                        null
+                ),
+                new ExpectedEvent(
+                        DeploymentStatus.DOWNLOADING,
+                        DeploymentStatus.DOWNLOADED,
+                        null
+                ),
+                new ExpectedEvent(
+                        DeploymentStatus.DOWNLOADED,
+                        DeploymentStatus.INSTALLING,
+                        null
+                ),
+                new ExpectedEvent(
+                        DeploymentStatus.INSTALLING,
+                        DeploymentStatus.INSTALLED,
+                        null
+                )
+        );
+    }
+
+    @Test
+    void shouldLeaveVehicleVersionUnchangedWhenRollbackFails() {
+        createRelease("2.0.4");
+        SoftwareReleaseResponse targetRelease = createRelease("2.1.4");
+        VehicleResponse vehicle = createVehicle("7FC00000000000012", "2.0.4");
+        DeploymentResponse original = createDeployment(vehicle.id(), targetRelease.id());
+        installDeployment(original.id());
+
+        DeploymentResponse rollback = rollbackDeployment(original.id());
+        updateStatus(rollback.id(), "DOWNLOADING");
+        updateStatus(rollback.id(), "FAILED", "Rollback failed");
+
+        assertEquals("2.1.4", getVehicle(vehicle.id()).softwareVersion());
+        assertEquals(DeploymentStatus.FAILED, getDeployment(rollback.id()).status());
+        assertEquals(DeploymentStatus.INSTALLED, getDeployment(original.id()).status());
+    }
+
+    @Test
+    void shouldRejectRollbackWhenSourceDeploymentIsNotInstalled() {
+        createRelease("2.0.5");
+        SoftwareReleaseResponse targetRelease = createRelease("2.1.5");
+        VehicleResponse vehicle = createVehicle("7FC00000000000013", "2.0.5");
+        DeploymentResponse deployment = createDeployment(vehicle.id(), targetRelease.id());
+
+        assertRollbackConflict(deployment.id());
+        assertEquals(1, deploymentsForVehicle(vehicle.id()).size());
+    }
+
+    @Test
+    void shouldRejectRollbackWhenPreviousReleaseIsMissing() {
+        SoftwareReleaseResponse targetRelease = createRelease("2.1.6");
+        VehicleResponse vehicle = createVehicle("7FC00000000000014", "2.0.6");
+        DeploymentResponse original = createDeployment(vehicle.id(), targetRelease.id());
+        installDeployment(original.id());
+
+        assertRollbackConflict(original.id());
+
+        assertEquals(1, deploymentsForVehicle(vehicle.id()).size());
+    }
+
+    @Test
+    void shouldRejectRollbackWhenVehicleHasMovedSinceSourceDeployment() {
+        createRelease("2.0.7");
+        SoftwareReleaseResponse firstTargetRelease = createRelease("2.1.7");
+        SoftwareReleaseResponse secondTargetRelease = createRelease("2.2.7");
+        VehicleResponse vehicle = createVehicle("7FC00000000000015", "2.0.7");
+        DeploymentResponse original = createDeployment(vehicle.id(), firstTargetRelease.id());
+        installDeployment(original.id());
+        DeploymentResponse newerDeployment = createDeployment(vehicle.id(), secondTargetRelease.id());
+        installDeployment(newerDeployment.id());
+
+        assertRollbackConflict(original.id());
+
+        assertEquals(2, deploymentsForVehicle(vehicle.id()).size());
+        assertEquals("2.2.7", getVehicle(vehicle.id()).softwareVersion());
+    }
+
+    @Test
+    void shouldRejectRollbackWhenAnotherActiveDeploymentExists() {
+        createRelease("2.0.8");
+        SoftwareReleaseResponse targetRelease = createRelease("2.1.8");
+        SoftwareReleaseResponse activeRelease = createRelease("2.2.8");
+        VehicleResponse vehicle = createVehicle("7FC00000000000016", "2.0.8");
+        DeploymentResponse original = createDeployment(vehicle.id(), targetRelease.id());
+        installDeployment(original.id());
+        createDeployment(vehicle.id(), activeRelease.id());
+
+        assertRollbackConflict(original.id());
+
+        assertEquals(2, deploymentsForVehicle(vehicle.id()).size());
+        assertEquals("2.1.8", getVehicle(vehicle.id()).softwareVersion());
+    }
+
+    @Test
+    void shouldReturnExistingRollbackForRepeatedRequests() {
+        createRelease("2.0.9");
+        SoftwareReleaseResponse targetRelease = createRelease("2.1.9");
+        VehicleResponse vehicle = createVehicle("7FC00000000000017", "2.0.9");
+        DeploymentResponse original = createDeployment(vehicle.id(), targetRelease.id());
+        installDeployment(original.id());
+
+        DeploymentResponse firstRollback = rollbackDeployment(original.id());
+        DeploymentResponse secondRollback = rollbackDeployment(original.id());
+
+        assertEquals(firstRollback.id(), secondRollback.id());
+        assertEquals(2, deploymentsForVehicle(vehicle.id()).size());
+
+        updateStatus(firstRollback.id(), "DOWNLOADING");
+        updateStatus(firstRollback.id(), "FAILED", "Rollback failed");
+        DeploymentResponse thirdRollback = rollbackDeployment(original.id());
+
+        assertEquals(firstRollback.id(), thirdRollback.id());
+        assertEquals(2, deploymentsForVehicle(vehicle.id()).size());
+    }
+
+    @Test
+    void shouldRejectRollbackOfRollback() {
+        createRelease("2.0.10");
+        SoftwareReleaseResponse targetRelease = createRelease("2.1.10");
+        VehicleResponse vehicle = createVehicle("7FC00000000000018", "2.0.10");
+        DeploymentResponse original = createDeployment(vehicle.id(), targetRelease.id());
+        installDeployment(original.id());
+        DeploymentResponse rollback = rollbackDeployment(original.id());
+        installDeployment(rollback.id());
+
+        assertRollbackConflict(rollback.id());
+
+        assertEquals(2, deploymentsForVehicle(vehicle.id()).size());
+    }
+
+    @Test
+    void shouldReturnNotFoundWhenRollbackSourceDeploymentIsMissing() {
+        restClient.post()
+                .uri("/api/v1/deployments/" + UUID.randomUUID() + "/rollback")
+                .exchange()
+                .expectStatus().isNotFound();
+    }
+
     private VehicleResponse createVehicle(
             String vin,
             String softwareVersion
@@ -322,6 +534,16 @@ class OtaFlowIntegrationTest {
                 ))
                 .exchange()
                 .expectStatus().isCreated()
+                .expectBody(VehicleResponse.class)
+                .returnResult()
+                .getResponseBody();
+    }
+
+    private VehicleResponse getVehicle(UUID vehicleId) {
+        return restClient.get()
+                .uri("/api/v1/vehicles/" + vehicleId)
+                .exchange()
+                .expectStatus().isOk()
                 .expectBody(VehicleResponse.class)
                 .returnResult()
                 .getResponseBody();
@@ -359,6 +581,23 @@ class OtaFlowIntegrationTest {
                 .getResponseBody();
     }
 
+    private DeploymentResponse rollbackDeployment(UUID deploymentId) {
+        return restClient.post()
+                .uri("/api/v1/deployments/" + deploymentId + "/rollback")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(DeploymentResponse.class)
+                .returnResult()
+                .getResponseBody();
+    }
+
+    private void assertRollbackConflict(UUID deploymentId) {
+        restClient.post()
+                .uri("/api/v1/deployments/" + deploymentId + "/rollback")
+                .exchange()
+                .expectStatus().isEqualTo(409);
+    }
+
     private DeploymentResponse getDeployment(UUID deploymentId) {
         return restClient.get()
                 .uri("/api/v1/deployments/" + deploymentId)
@@ -367,6 +606,27 @@ class OtaFlowIntegrationTest {
                 .expectBody(DeploymentResponse.class)
                 .returnResult()
                 .getResponseBody();
+    }
+
+    private List<DeploymentResponse> deploymentsForVehicle(UUID vehicleId) {
+        DeploymentResponse[] deployments = restClient.get()
+                .uri("/api/v1/deployments")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(DeploymentResponse[].class)
+                .returnResult()
+                .getResponseBody();
+
+        return Arrays.stream(deployments)
+                .filter(deployment -> deployment.vehicleId().equals(vehicleId))
+                .toList();
+    }
+
+    private void installDeployment(UUID deploymentId) {
+        updateStatus(deploymentId, "DOWNLOADING");
+        updateStatus(deploymentId, "DOWNLOADED");
+        updateStatus(deploymentId, "INSTALLING");
+        updateStatus(deploymentId, "INSTALLED");
     }
 
     private DeploymentResponse updateStatus(UUID deploymentId, String status) {
@@ -400,20 +660,14 @@ class OtaFlowIntegrationTest {
             UUID deploymentId,
             ExpectedEvent... expectedEvents
     ) {
-        DeploymentEventResponse[] events = restClient.get()
-                .uri("/api/v1/deployments/" + deploymentId + "/events")
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody(DeploymentEventResponse[].class)
-                .returnResult()
-                .getResponseBody();
+        List<DeploymentEventResponse> events = getDeploymentEvents(deploymentId);
 
-        assertEquals(expectedEvents.length, events.length);
+        assertEquals(expectedEvents.length, events.size());
 
         Instant previousCreatedAt = null;
 
         for (int i = 0; i < expectedEvents.length; i++) {
-            DeploymentEventResponse event = events[i];
+            DeploymentEventResponse event = events.get(i);
             ExpectedEvent expectedEvent = expectedEvents[i];
 
             assertEquals(expectedEvent.fromStatus(), event.fromStatus());
@@ -428,6 +682,18 @@ class OtaFlowIntegrationTest {
 
             previousCreatedAt = event.createdAt();
         }
+    }
+
+    private List<DeploymentEventResponse> getDeploymentEvents(UUID deploymentId) {
+        DeploymentEventResponse[] events = restClient.get()
+                .uri("/api/v1/deployments/" + deploymentId + "/events")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(DeploymentEventResponse[].class)
+                .returnResult()
+                .getResponseBody();
+
+        return Arrays.asList(events);
     }
 
     private record ExpectedEvent(

@@ -27,6 +27,10 @@ public class Deployment {
     @JoinColumn(name = "rollout_stage_id")
     private RolloutStage rolloutStage;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "rollback_of_deployment_id")
+    private Deployment rollbackOfDeployment;
+
     @Column(name = "source_software_version", nullable = false, length = 50)
     private String sourceSoftwareVersion;
 
@@ -51,6 +55,7 @@ public class Deployment {
         this.vehicle = vehicle;
         this.release = release;
         this.rolloutStage = null;
+        this.rollbackOfDeployment = null;
         this.sourceSoftwareVersion = vehicle.getSoftwareVersion();
         this.status = DeploymentStatus.PENDING;
         this.createdAt = Instant.now();
@@ -64,6 +69,15 @@ public class Deployment {
     ) {
         this(vehicle, release);
         this.rolloutStage = rolloutStage;
+    }
+
+    public Deployment(
+            Vehicle vehicle,
+            SoftwareRelease release,
+            Deployment rollbackOfDeployment
+    ) {
+        this(vehicle, release);
+        this.rollbackOfDeployment = rollbackOfDeployment;
     }
 
     public void transitionTo(DeploymentStatus nextStatus, String failureReason) {
@@ -123,6 +137,10 @@ public class Deployment {
 
     public RolloutStage getRolloutStage() {
         return rolloutStage;
+    }
+
+    public Deployment getRollbackOfDeployment() {
+        return rollbackOfDeployment;
     }
 
     public String getSourceSoftwareVersion() {

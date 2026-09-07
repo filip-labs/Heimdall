@@ -17,6 +17,7 @@ public record DeploymentResponse(
 
         DeploymentStatus status,
         String failureReason,
+        UUID rollbackOfDeploymentId,
 
         Instant createdAt,
         Instant updatedAt
@@ -37,6 +38,9 @@ public record DeploymentResponse(
 
                 deployment.getStatus(),
                 deployment.getFailureReason(),
+                deployment.getRollbackOfDeployment() == null
+                        ? null
+                        : deployment.getRollbackOfDeployment().getId(),
 
                 deployment.getCreatedAt(),
                 deployment.getUpdatedAt()

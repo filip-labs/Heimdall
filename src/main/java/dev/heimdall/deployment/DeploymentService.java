@@ -1,19 +1,19 @@
 package dev.heimdall.deployment;
 
-import dev.heimdall.rollout.RolloutStage;
 import dev.heimdall.release.SoftwareRelease;
 import dev.heimdall.release.SoftwareReleaseRepository;
+import dev.heimdall.rollout.RolloutStage;
 import dev.heimdall.vehicle.Vehicle;
 import dev.heimdall.vehicle.VehicleRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-
-import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -67,7 +67,7 @@ public class DeploymentService {
             );
         }
 
-        return DeploymentResponse.from(createDeployment(vehicle, release, null));
+        return DeploymentResponse.from(createDeployment(vehicle, release, null, null));
     }
 
     public Deployment createForRolloutStage(
@@ -92,15 +92,26 @@ public class DeploymentService {
             );
         }
 
-        return createDeployment(vehicle, release, rolloutStage);
+        return createDeployment(vehicle, release, rolloutStage, null);
+    }
+
+    Deployment createRollbackDeployment(
+            Vehicle vehicle,
+            SoftwareRelease release,
+            Deployment rollbackOfDeployment
+    ) {
+        return createDeployment(vehicle, release, null, rollbackOfDeployment);
     }
 
     private Deployment createDeployment(
             Vehicle vehicle,
             SoftwareRelease release,
-            RolloutStage rolloutStage
+            RolloutStage rolloutStage,
+            Deployment rollbackOfDeployment
     ) {
-        Deployment deployment = new Deployment(vehicle, release, rolloutStage);
+        Deployment deployment = rollbackOfDeployment == null
+                ? new Deployment(vehicle, release, rolloutStage)
+                : new Deployment(vehicle, release, rollbackOfDeployment);
         Deployment savedDeployment = deploymentRepository.save(deployment);
 
         deploymentEventRepository.save(new DeploymentEvent(

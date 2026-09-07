@@ -12,9 +12,14 @@ import java.util.UUID;
 public class DeploymentController {
 
     private final DeploymentService deploymentService;
+    private final DeploymentRollbackService deploymentRollbackService;
 
-    public DeploymentController(DeploymentService deploymentService) {
+    public DeploymentController(
+            DeploymentService deploymentService,
+            DeploymentRollbackService deploymentRollbackService
+    ) {
         this.deploymentService = deploymentService;
+        this.deploymentRollbackService = deploymentRollbackService;
     }
 
     @PostMapping
@@ -46,5 +51,10 @@ public class DeploymentController {
             @Valid @RequestBody UpdateDeploymentStatusRequest request
     ) {
         return deploymentService.updateStatus(id, request);
+    }
+
+    @PostMapping("/{id}/rollback")
+    public DeploymentResponse rollback(@PathVariable UUID id) {
+        return deploymentRollbackService.rollback(id);
     }
 }

@@ -153,6 +153,18 @@ Each stage creates deployments only for the incremental cohort. When all deploym
 
 Operators can pause, resume, or cancel a rollout with `POST /api/v1/rollouts/{id}/pause`, `POST /api/v1/rollouts/{id}/resume`, and `POST /api/v1/rollouts/{id}/cancel`. Pause and cancel stop future rollout progression without modifying existing deployments. Cancel is permanent and does not roll back already-installed vehicles.
 
+Manual rollback is modeled as a new normal deployment with `POST /api/v1/deployments/{id}/rollback`. Heimdall uses the original deployment's `sourceSoftwareVersion` snapshot to find the previous `SoftwareRelease`, reuses that release's artifact URL and checksum, and leaves the original deployment and event history immutable.
+
+```text
+2.0.0
+  -> deployment
+2.1.0
+  -> rollback deployment
+2.0.0
+```
+
+Rollback deployments use the same OTA state machine, event trail, active-deployment protection, and vehicle software update behavior as any other deployment. Automatic rollback policy remains future M7C work.
+
 A manual demo can validate the health gate by configuring one canary to fail deterministically:
 
 ```bash
@@ -292,8 +304,8 @@ M5 Fleet Simulator                                   Done
 M6A Staged Fleet Rollouts                            Done
 M6B Deterministic Failure Injection + Pause Demo     Done
 M7A Manual Rollout Controls                          Done
-M7B Rollback Deployments                             Next
-M7C Automatic Rollback Policy
+M7B Rollback Deployments                             Done
+M7C Automatic Rollback Policy                        Next
 M8 Observability
 M9 Kafka / Event-driven Architecture
 M10 Scalability Testing

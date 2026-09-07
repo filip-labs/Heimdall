@@ -267,6 +267,13 @@
             },
             "url": "{{baseUrl}}/api/v1/deployments/{{deploymentId}}/status"
           }
+        },
+        {
+          "name": "Rollback Deployment",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/deployments/{{deploymentId}}/rollback"
+          }
         }
       ]
     },

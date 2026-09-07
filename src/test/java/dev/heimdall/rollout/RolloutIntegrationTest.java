@@ -252,6 +252,28 @@ class RolloutIntegrationTest {
     }
 
     @Test
+    void shouldKeepManualRollbackOutOfRolloutStageCounts() {
+        createRelease("2.15.2");
+        SoftwareReleaseResponse rolloutRelease = createRelease("2.15.3");
+        createVehicles("7FC15200000000", 10, "2.15.2");
+        RolloutResponse rollout = createRollout(
+                rolloutRelease.id(),
+                List.of(50, 100),
+                BigDecimal.valueOf(5.0)
+        );
+        DeploymentResponse original = deploymentsForRelease(rolloutRelease.id()).getFirst();
+        completeDeployment(original.id(), DeploymentStatus.INSTALLED);
+
+        DeploymentResponse rollback = rollbackDeployment(original.id());
+
+        List<RolloutStageResponse> stages = getStages(rollout.id());
+        assertEquals(original.id(), rollback.rollbackOfDeploymentId());
+        assertEquals("2.15.2", rollback.targetSoftwareVersion());
+        assertEquals(5, stages.getFirst().deploymentCount());
+        assertEquals(0, stages.get(1).deploymentCount());
+    }
+
+    @Test
     void shouldPauseRunningRollout() {
         SoftwareReleaseResponse release = createRelease("2.16.0");
         createVehicles("7FC16000000000", 10, "1.0.0");
@@ -593,6 +615,16 @@ class RolloutIntegrationTest {
                 ))
                 .exchange()
                 .expectStatus().isCreated()
+                .expectBody(DeploymentResponse.class)
+                .returnResult()
+                .getResponseBody();
+    }
+
+    private DeploymentResponse rollbackDeployment(UUID deploymentId) {
+        return restClient.post()
+                .uri("/api/v1/deployments/" + deploymentId + "/rollback")
+                .exchange()
+                .expectStatus().isOk()
                 .expectBody(DeploymentResponse.class)
                 .returnResult()
                 .getResponseBody();
