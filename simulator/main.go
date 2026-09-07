@@ -41,6 +41,12 @@ func main() {
 		"fleet simulator starting with %d vehicles",
 		config.FleetSize,
 	)
+	if len(config.SimulatedFailureVINs) > 0 {
+		log.Printf(
+			"deterministic OTA failure injection enabled for %d vehicle(s)",
+			len(config.SimulatedFailureVINs),
+		)
+	}
 
 	agents, failed := bootstrapFleet(
 		ctx,

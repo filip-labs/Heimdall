@@ -23,6 +23,7 @@ type FleetConfig struct {
 	InitialSoftwareVersion string
 	HeartbeatInterval      time.Duration
 	DeploymentPollInterval time.Duration
+	SimulatedFailureVINs   map[string]struct{}
 }
 
 func loadFleetConfigFromEnv() (FleetConfig, error) {
@@ -59,6 +60,13 @@ func loadFleetConfigFromEnv() (FleetConfig, error) {
 		)
 	}
 
+	simulatedFailureVINs, err := parseSimulatedFailureVINs(
+		os.Getenv("SIMULATED_FAILURE_VINS"),
+	)
+	if err != nil {
+		return FleetConfig{}, err
+	}
+
 	return FleetConfig{
 		BaseURL: strings.TrimRight(
 			getEnv("HEIMDALL_URL", defaultBaseURL),
@@ -68,7 +76,30 @@ func loadFleetConfigFromEnv() (FleetConfig, error) {
 		InitialSoftwareVersion: initialSoftwareVersion,
 		HeartbeatInterval:      heartbeatInterval,
 		DeploymentPollInterval: deploymentPollInterval,
+		SimulatedFailureVINs:   simulatedFailureVINs,
 	}, nil
+}
+
+func parseSimulatedFailureVINs(value string) (map[string]struct{}, error) {
+	configuredVINs := make(map[string]struct{})
+
+	for _, entry := range strings.Split(value, ",") {
+		vin := strings.TrimSpace(entry)
+		if vin == "" {
+			continue
+		}
+
+		if !isValidVIN(vin) {
+			return nil, fmt.Errorf(
+				"invalid SIMULATED_FAILURE_VINS VIN %q",
+				vin,
+			)
+		}
+
+		configuredVINs[vin] = struct{}{}
+	}
+
+	return configuredVINs, nil
 }
 
 func parsePositiveIntEnv(name string, fallback int) (int, error) {

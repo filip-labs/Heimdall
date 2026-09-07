@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -57,6 +58,94 @@ func TestGenerateVINsAreUnique(t *testing.T) {
 		}
 
 		seen[vin] = struct{}{}
+	}
+}
+
+func TestParseSimulatedFailureVINs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		value     string
+		expected  []string
+		wantError bool
+	}{
+		{
+			name:     "empty",
+			value:    "",
+			expected: []string{},
+		},
+		{
+			name:     "one VIN",
+			value:    "7FC00000000000003",
+			expected: []string{"7FC00000000000003"},
+		},
+		{
+			name:  "multiple VINs",
+			value: "7FC00000000000003,7FC00000000000017",
+			expected: []string{
+				"7FC00000000000003",
+				"7FC00000000000017",
+			},
+		},
+		{
+			name:  "trims whitespace",
+			value: " 7FC00000000000003, 7FC00000000000017 ",
+			expected: []string{
+				"7FC00000000000003",
+				"7FC00000000000017",
+			},
+		},
+		{
+			name:     "deduplicates and ignores empty entries",
+			value:    "7FC00000000000003,, 7FC00000000000003, ",
+			expected: []string{"7FC00000000000003"},
+		},
+		{
+			name:      "invalid VIN",
+			value:     "not-a-vin",
+			wantError: true,
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			configuredVINs, err := parseSimulatedFailureVINs(test.value)
+
+			if test.wantError {
+				if err == nil {
+					t.Fatal("expected invalid VIN to be rejected")
+				}
+
+				if !strings.Contains(err.Error(), "SIMULATED_FAILURE_VINS") {
+					t.Fatalf("unexpected error: %v", err)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("expected parsing to succeed, got %v", err)
+			}
+
+			if len(configuredVINs) != len(test.expected) {
+				t.Fatalf(
+					"expected %d VINs, got %d",
+					len(test.expected),
+					len(configuredVINs),
+				)
+			}
+
+			for _, vin := range test.expected {
+				if _, exists := configuredVINs[vin]; !exists {
+					t.Fatalf("expected VIN %s to be configured", vin)
+				}
+			}
+		})
 	}
 }
 
@@ -233,6 +322,9 @@ func TestBootstrapFleetInitializesDistinctVehicles(t *testing.T) {
 			InitialSoftwareVersion: "1.3.0",
 			HeartbeatInterval:      time.Second,
 			DeploymentPollInterval: time.Second,
+			SimulatedFailureVINs: map[string]struct{}{
+				"7FC00000000000003": {},
+			},
 		},
 		client,
 		downloader,
@@ -258,6 +350,16 @@ func TestBootstrapFleetInitializesDistinctVehicles(t *testing.T) {
 		}
 
 		seenIDs[agent.ID] = struct{}{}
+
+		if agent.VIN == "7FC00000000000003" &&
+			!agent.SimulateInstallFailure {
+			t.Fatalf("expected %s to simulate install failure", agent.VIN)
+		}
+
+		if agent.VIN != "7FC00000000000003" &&
+			agent.SimulateInstallFailure {
+			t.Fatalf("expected %s to install normally", agent.VIN)
+		}
 	}
 }
 
@@ -469,6 +571,168 @@ func TestDownloadAndVerifyArtifactStopsAfterThreeAttempts(t *testing.T) {
 	}
 }
 
+func TestProcessDeploymentInstallsNormally(t *testing.T) {
+	t.Parallel()
+
+	payload := []byte("normal artifact")
+	var updates []deploymentStatusUpdate
+	var mu sync.Mutex
+
+	server := newOTATestServer(t, payload, &updates, &mu)
+	defer server.Close()
+
+	agent := newOTATestAgent(
+		server,
+		"7FC00000000000001",
+		"2.0.0",
+		false,
+	)
+
+	err := agent.processDeployment(context.Background(), Deployment{
+		ID:                    "deployment-1",
+		SourceSoftwareVersion: "2.0.0",
+		TargetSoftwareVersion: "2.1.0",
+		ArtifactURL:           server.URL + "/artifact.bin",
+		Checksum:              checksumFor(payload),
+		Status:                "PENDING",
+	})
+	if err != nil {
+		t.Fatalf("expected OTA to succeed, got %v", err)
+	}
+
+	assertDeploymentStatuses(t, updates, []string{
+		"DOWNLOADING",
+		"DOWNLOADED",
+		"INSTALLING",
+		"INSTALLED",
+	})
+
+	if agent.SoftwareVersion != "2.1.0" {
+		t.Fatalf("expected software version 2.1.0, got %q", agent.SoftwareVersion)
+	}
+}
+
+func TestProcessDeploymentSimulatesInstallationFailure(t *testing.T) {
+	t.Parallel()
+
+	payload := []byte("failure artifact")
+	var updates []deploymentStatusUpdate
+	var mu sync.Mutex
+
+	server := newOTATestServer(t, payload, &updates, &mu)
+	defer server.Close()
+
+	agent := newOTATestAgent(
+		server,
+		"7FC00000000000003",
+		"2.0.0",
+		true,
+	)
+
+	err := agent.processDeployment(context.Background(), Deployment{
+		ID:                    "deployment-1",
+		SourceSoftwareVersion: "2.0.0",
+		TargetSoftwareVersion: "2.1.0",
+		ArtifactURL:           server.URL + "/artifact.bin",
+		Checksum:              checksumFor(payload),
+		Status:                "PENDING",
+	})
+	if err != nil {
+		t.Fatalf("expected simulated failure to be reported, got %v", err)
+	}
+
+	assertDeploymentStatuses(t, updates, []string{
+		"DOWNLOADING",
+		"DOWNLOADED",
+		"INSTALLING",
+		"FAILED",
+	})
+
+	lastUpdate := updates[len(updates)-1]
+	if lastUpdate.FailureReason != simulatedInstallationFailureReason {
+		t.Fatalf(
+			"expected failure reason %q, got %q",
+			simulatedInstallationFailureReason,
+			lastUpdate.FailureReason,
+		)
+	}
+
+	if agent.SoftwareVersion != "2.0.0" {
+		t.Fatalf("expected software version to remain 2.0.0, got %q", agent.SoftwareVersion)
+	}
+}
+
+func TestProcessDeploymentDoesNotReprocessTerminalDeployments(t *testing.T) {
+	t.Parallel()
+
+	requests := 0
+	var mu sync.Mutex
+
+	server := httptest.NewServer(http.HandlerFunc(func(
+		writer http.ResponseWriter,
+		request *http.Request,
+	) {
+		mu.Lock()
+		requests++
+		mu.Unlock()
+
+		t.Fatalf("unexpected request for terminal deployment: %s %s", request.Method, request.URL.Path)
+	}))
+	defer server.Close()
+
+	agent := newOTATestAgent(
+		server,
+		"7FC00000000000003",
+		"2.0.0",
+		true,
+	)
+
+	for _, status := range []string{"FAILED", "INSTALLED"} {
+		for index := 0; index < 2; index++ {
+			err := agent.processDeployment(context.Background(), Deployment{
+				ID:                    "deployment-1",
+				SourceSoftwareVersion: "2.0.0",
+				TargetSoftwareVersion: "2.1.0",
+				ArtifactURL:           server.URL + "/artifact.bin",
+				Checksum:              "unused",
+				Status:                status,
+			})
+			if err != nil {
+				t.Fatalf(
+					"expected terminal %s deployment to be ignored, got %v",
+					status,
+					err,
+				)
+			}
+		}
+	}
+
+	restartedAgent := newOTATestAgent(
+		server,
+		"7FC00000000000003",
+		"2.0.0",
+		true,
+	)
+
+	err := restartedAgent.processDeployment(context.Background(), Deployment{
+		ID:                    "deployment-1",
+		SourceSoftwareVersion: "2.0.0",
+		TargetSoftwareVersion: "2.1.0",
+		ArtifactURL:           server.URL + "/artifact.bin",
+		Checksum:              "unused",
+		Status:                "FAILED",
+	})
+	if err != nil {
+		t.Fatalf("expected restarted agent to ignore terminal deployment, got %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if requests != 0 {
+		t.Fatalf("expected no backend calls, got %d", requests)
+	}
+}
+
 func newTestAgent(
 	baseURL string,
 	vin string,
@@ -489,6 +753,80 @@ func newTestAgent(
 		},
 		HeartbeatInterval:      time.Second,
 		DeploymentPollInterval: time.Second,
+		InstallWait:            func(context.Context, time.Duration) error { return nil },
+	}
+}
+
+type deploymentStatusUpdate struct {
+	Status        string `json:"status"`
+	FailureReason string `json:"failureReason"`
+}
+
+func newOTATestAgent(
+	server *httptest.Server,
+	vin string,
+	softwareVersion string,
+	simulateInstallFailure bool,
+) *VehicleAgent {
+	agent := newTestAgent(server.URL, vin, softwareVersion)
+	agent.Client = server.Client()
+	agent.Downloader.client = server.Client()
+	agent.SimulateInstallFailure = simulateInstallFailure
+
+	return agent
+}
+
+func newOTATestServer(
+	t *testing.T,
+	payload []byte,
+	updates *[]deploymentStatusUpdate,
+	mu *sync.Mutex,
+) *httptest.Server {
+	t.Helper()
+
+	return httptest.NewServer(http.HandlerFunc(func(
+		writer http.ResponseWriter,
+		request *http.Request,
+	) {
+		switch {
+		case request.Method == http.MethodGet &&
+			request.URL.Path == "/artifact.bin":
+			writer.WriteHeader(http.StatusOK)
+			_, _ = writer.Write(payload)
+
+		case request.Method == http.MethodPatch &&
+			request.URL.Path == "/api/v1/deployments/deployment-1/status":
+			var update deploymentStatusUpdate
+			if err := json.NewDecoder(request.Body).Decode(&update); err != nil {
+				t.Fatalf("failed to decode status update: %v", err)
+			}
+
+			mu.Lock()
+			*updates = append(*updates, update)
+			mu.Unlock()
+
+			writer.WriteHeader(http.StatusNoContent)
+
+		default:
+			t.Fatalf("unexpected request %s %s", request.Method, request.URL.Path)
+		}
+	}))
+}
+
+func assertDeploymentStatuses(
+	t *testing.T,
+	updates []deploymentStatusUpdate,
+	expected []string,
+) {
+	t.Helper()
+
+	statuses := make([]string, 0, len(updates))
+	for _, update := range updates {
+		statuses = append(statuses, update.Status)
+	}
+
+	if !slices.Equal(statuses, expected) {
+		t.Fatalf("expected status sequence %v, got %v", expected, statuses)
 	}
 }
 

@@ -19,6 +19,8 @@ type VehicleAgent struct {
 	Downloader             *artifactDownloader
 	HeartbeatInterval      time.Duration
 	DeploymentPollInterval time.Duration
+	SimulateInstallFailure bool
+	InstallWait            func(context.Context, time.Duration) error
 }
 
 func (a *VehicleAgent) run(ctx context.Context, wg *sync.WaitGroup) {
@@ -128,6 +130,14 @@ func (a *VehicleAgent) pollDeployment(ctx context.Context) error {
 
 func (a *VehicleAgent) logf(format string, args ...any) {
 	log.Printf("[%s] %s", a.VIN, fmt.Sprintf(format, args...))
+}
+
+func (a *VehicleAgent) waitForInstall(ctx context.Context) error {
+	if a.InstallWait != nil {
+		return a.InstallWait(ctx, installDelay)
+	}
+
+	return sleepWithContext(ctx, installDelay)
 }
 
 func shortID(id string) string {

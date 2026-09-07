@@ -8,11 +8,16 @@ import (
 )
 
 const installDelay = 2 * time.Second
+const simulatedInstallationFailureReason = "simulated installation failure"
 
 func (a *VehicleAgent) processDeployment(
 	ctx context.Context,
 	deployment Deployment,
 ) error {
+	if isTerminalDeploymentStatus(deployment.Status) {
+		return nil
+	}
+
 	a.logf(
 		"OTA detected: %s -> %s",
 		deployment.SourceSoftwareVersion,
@@ -93,8 +98,22 @@ func (a *VehicleAgent) processDeployment(
 	}
 
 	if deployment.Status == "INSTALLING" {
-		if err := sleepWithContext(ctx, installDelay); err != nil {
+		if err := a.waitForInstall(ctx); err != nil {
 			return err
+		}
+
+		if a.SimulateInstallFailure {
+			a.logf(
+				"simulating OTA installation failure for deployment %s",
+				deployment.ID,
+			)
+
+			return a.updateDeploymentStatus(
+				ctx,
+				deployment.ID,
+				"FAILED",
+				simulatedInstallationFailureReason,
+			)
 		}
 
 		if err := a.updateDeploymentStatus(
@@ -111,4 +130,8 @@ func (a *VehicleAgent) processDeployment(
 	}
 
 	return nil
+}
+
+func isTerminalDeploymentStatus(status string) bool {
+	return status == "FAILED" || status == "INSTALLED"
 }

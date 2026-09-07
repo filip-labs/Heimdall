@@ -40,6 +40,11 @@ func bootstrapFleet(
 				Downloader:             downloader,
 				HeartbeatInterval:      config.HeartbeatInterval,
 				DeploymentPollInterval: config.DeploymentPollInterval,
+				SimulateInstallFailure: isSimulatedFailureVIN(
+					config.SimulatedFailureVINs,
+					vin,
+				),
+				InstallWait: sleepWithContext,
 			}
 
 			if err := agent.registerOrResolve(ctx); err != nil {
@@ -73,4 +78,10 @@ func bootstrapFleet(
 	}
 
 	return readyAgents, failed
+}
+
+func isSimulatedFailureVIN(configuredVINs map[string]struct{}, vin string) bool {
+	_, exists := configuredVINs[vin]
+
+	return exists
 }

@@ -28,3 +28,28 @@ func generateVIN(index int) (string, error) {
 
 	return vin, nil
 }
+
+func isValidVIN(vin string) bool {
+	if len(vin) != 17 {
+		return false
+	}
+
+	for index := 0; index < len(vin); index++ {
+		character := vin[index]
+
+		if character >= '0' && character <= '9' {
+			continue
+		}
+
+		if character >= 'A' && character <= 'Z' &&
+			character != 'I' &&
+			character != 'O' &&
+			character != 'Q' {
+			continue
+		}
+
+		return false
+	}
+
+	return true
+}

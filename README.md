@@ -121,9 +121,12 @@ FLEET_SIZE=100
 INITIAL_SOFTWARE_VERSION=1.3.0
 HEARTBEAT_INTERVAL=5s
 DEPLOYMENT_POLL_INTERVAL=3s
+SIMULATED_FAILURE_VINS=7FC00000000000003
 ```
 
 The simulator generates deterministic VINs, registers or reuses existing backend vehicles, sends heartbeats, polls for active deployments, processes OTA artifacts, and shuts down cleanly on `SIGINT` or `SIGTERM`.
+
+`SIMULATED_FAILURE_VINS` is an optional comma-separated VIN list for deterministic OTA installation failures. Targeted vehicles still download the artifact, verify its SHA-256 checksum, report `DOWNLOADED`, report `INSTALLING`, then report `FAILED` with `simulated installation failure` while keeping their previous software version.
 
 ## Staged Rollouts
 
@@ -147,7 +150,17 @@ Rollout targets are selected once at creation time from vehicles not already run
 
 Each stage creates deployments only for the incremental cohort. When all deployments in the current stage are terminal, Heimdall evaluates that stage's failure rate. If the failure rate is greater than the configured threshold, the current stage is marked `FAILED` and the rollout is `PAUSED`. If the failure rate is less than or equal to the threshold, the rollout advances to the next stage or completes.
 
-A manual demo has verified 100 simulated vehicles upgrading through a staged rollout. Deterministic failure injection and an automatic-pause demo are the next rollout milestone and are not implemented yet.
+A manual demo can validate the health gate by configuring one canary to fail deterministically:
+
+```bash
+cd simulator
+FLEET_SIZE=100 \
+INITIAL_SOFTWARE_VERSION=2.0.0 \
+SIMULATED_FAILURE_VINS=7FC00000000000003 \
+go run .
+```
+
+With rollout stages `[5,25,50,100]` and a 5% failure threshold, VIN `7FC00000000000003` fails in the canary cohort, stage 0 pauses the rollout, and no deployments are created for stage 1.
 
 ## API Overview
 
@@ -175,7 +188,7 @@ The Postman collection in `postman/Heimdall.postman_collection.json` covers the 
 - Docker Compose
 - Postman
 
-Kafka, Prometheus, Grafana, Redis, rollback orchestration, and deterministic failure injection are roadmap items, not implemented features.
+Kafka, Prometheus, Grafana, Redis, and rollback orchestration are roadmap items, not implemented features.
 
 ## Running Locally
 
@@ -274,7 +287,7 @@ M3 Artifact Integrity                                Done
 M4 Reliability + Audit                               Done
 M5 Fleet Simulator                                   Done
 M6A Staged Fleet Rollouts                            Done
-M6B Deterministic Failure Injection + Pause Demo     Next
+M6B Deterministic Failure Injection + Pause Demo     Done
 M7 Rollback & Recovery
 M8 Observability
 M9 Kafka / Event-driven Architecture
