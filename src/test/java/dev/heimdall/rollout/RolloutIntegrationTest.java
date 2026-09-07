@@ -46,6 +46,9 @@ class RolloutIntegrationTest {
     private RolloutEvaluator rolloutEvaluator;
 
     @Autowired
+    private RolloutScheduler rolloutScheduler;
+
+    @Autowired
     private RolloutTargetRepository rolloutTargetRepository;
 
     @Autowired
@@ -271,6 +274,249 @@ class RolloutIntegrationTest {
         assertEquals("2.15.2", rollback.targetSoftwareVersion());
         assertEquals(5, stages.getFirst().deploymentCount());
         assertEquals(0, stages.get(1).deploymentCount());
+    }
+
+    @Test
+    void shouldDefaultAutomaticRollbackPolicyToDisabled() {
+        createRelease("2.15.4");
+        SoftwareReleaseResponse rolloutRelease = createRelease("2.15.5");
+        createVehicles("7FC15400000000", 10, "2.15.4");
+        RolloutResponse rollout = createRollout(
+                rolloutRelease.id(),
+                List.of(50, 100),
+                BigDecimal.valueOf(20.0)
+        );
+
+        completePendingDeployments(rolloutRelease.id(), 3, DeploymentStatus.INSTALLED);
+        completePendingDeployments(rolloutRelease.id(), 2, DeploymentStatus.FAILED);
+        rolloutScheduler.evaluate();
+
+        assertEquals(false, getRollout(rollout.id()).automaticRollbackEnabled());
+        assertEquals(RolloutStatus.PAUSED, getRollout(rollout.id()).status());
+        assertEquals(0, rollbackDeployments().size());
+    }
+
+    @Test
+    void shouldAutomaticallyRollbackInstalledDeploymentsFromFailedCurrentStageOnly() {
+        createRelease("2.15.6");
+        SoftwareReleaseResponse rolloutRelease = createRelease("2.15.7");
+        createVehicles("7FC15600000000", 10, "2.15.6");
+        RolloutResponse rollout = createRollout(
+                rolloutRelease.id(),
+                List.of(50, 100),
+                BigDecimal.valueOf(20.0),
+                true
+        );
+
+        List<UUID> firstStageDeploymentIds = deploymentsForRelease(rolloutRelease.id())
+                .stream()
+                .map(DeploymentResponse::id)
+                .toList();
+        completePendingDeployments(rolloutRelease.id(), 5, DeploymentStatus.INSTALLED);
+        rolloutScheduler.evaluate();
+        completePendingDeployments(rolloutRelease.id(), 3, DeploymentStatus.INSTALLED);
+        completePendingDeployments(rolloutRelease.id(), 2, DeploymentStatus.FAILED);
+
+        rolloutScheduler.evaluate();
+
+        List<RolloutStageResponse> stages = getStages(rollout.id());
+        List<DeploymentResponse> rollbacks = rollbackDeployments();
+        assertEquals(RolloutStatus.PAUSED, getRollout(rollout.id()).status());
+        assertEquals(RolloutStageStatus.COMPLETED, stages.getFirst().status());
+        assertEquals(RolloutStageStatus.FAILED, stages.get(1).status());
+        assertEquals(3, rollbacks.size());
+        assertEquals(0, rollbacks.stream()
+                .filter(rollback -> firstStageDeploymentIds.contains(rollback.rollbackOfDeploymentId()))
+                .count());
+        assertEquals(3, rollbacks.stream()
+                .filter(rollback -> rollback.targetSoftwareVersion().equals("2.15.6"))
+                .count());
+        assertEquals(5, stages.getFirst().deploymentCount());
+        assertEquals(5, stages.get(1).deploymentCount());
+    }
+
+    @Test
+    void shouldNotAutomaticallyRollbackManuallyPausedRunningStage() {
+        createRelease("2.15.8");
+        SoftwareReleaseResponse rolloutRelease = createRelease("2.15.9");
+        createVehicles("7FC15800000000", 10, "2.15.8");
+        RolloutResponse rollout = createRollout(
+                rolloutRelease.id(),
+                List.of(50, 100),
+                BigDecimal.valueOf(20.0),
+                true
+        );
+
+        controlRollout(rollout.id(), "pause");
+        rolloutScheduler.evaluate();
+
+        List<RolloutStageResponse> stages = getStages(rollout.id());
+        assertEquals(RolloutStatus.PAUSED, getRollout(rollout.id()).status());
+        assertEquals(RolloutStageStatus.RUNNING, stages.getFirst().status());
+        assertEquals(0, rollbackDeployments().size());
+    }
+
+    @Test
+    void shouldKeepAutomaticRollbackIdempotentAcrossSchedulerRuns() {
+        createRelease("2.15.10");
+        SoftwareReleaseResponse rolloutRelease = createRelease("2.15.11");
+        createVehicles("7FC15100000000", 10, "2.15.10");
+        RolloutResponse rollout = createRollout(
+                rolloutRelease.id(),
+                List.of(50, 100),
+                BigDecimal.valueOf(20.0),
+                true
+        );
+
+        completePendingDeployments(rolloutRelease.id(), 3, DeploymentStatus.INSTALLED);
+        completePendingDeployments(rolloutRelease.id(), 2, DeploymentStatus.FAILED);
+        rolloutScheduler.evaluate();
+        List<UUID> rollbackIds = rollbackDeployments()
+                .stream()
+                .map(DeploymentResponse::id)
+                .toList();
+
+        rolloutScheduler.evaluate();
+        rolloutScheduler.evaluate();
+
+        assertEquals(RolloutStatus.PAUSED, getRollout(rollout.id()).status());
+        assertEquals(3, rollbackDeployments().size());
+        assertEquals(rollbackIds, rollbackDeployments()
+                .stream()
+                .map(DeploymentResponse::id)
+                .toList());
+    }
+
+    @Test
+    void shouldReturnVehiclesToOriginalVersionAfterSuccessfulAutomaticRollback() {
+        createRelease("1.3.0");
+        SoftwareReleaseResponse rolloutRelease = createRelease("1.4.0");
+        List<VehicleResponse> vehicles = createVehicles("7FC15300000000", 5, "1.3.0");
+        RolloutResponse rollout = createRollout(
+                rolloutRelease.id(),
+                List.of(100),
+                BigDecimal.valueOf(5.0),
+                true
+        );
+        List<DeploymentResponse> sourceDeployments = deploymentsForReleaseSortedByVehicleVin(rolloutRelease.id());
+
+        completeDeployment(sourceDeployments.get(0).id(), DeploymentStatus.INSTALLED);
+        completeDeployment(sourceDeployments.get(1).id(), DeploymentStatus.INSTALLED);
+        completeDeployment(sourceDeployments.get(2).id(), DeploymentStatus.FAILED);
+        completeDeployment(sourceDeployments.get(3).id(), DeploymentStatus.INSTALLED);
+        completeDeployment(sourceDeployments.get(4).id(), DeploymentStatus.INSTALLED);
+        rolloutScheduler.evaluate();
+
+        List<DeploymentResponse> rollbacks = rollbackDeployments();
+        assertEquals(RolloutStatus.PAUSED, getRollout(rollout.id()).status());
+        assertEquals(RolloutStageStatus.FAILED, getStages(rollout.id()).getFirst().status());
+        assertEquals(4, rollbacks.size());
+        assertEquals(List.of(
+                sourceDeployments.get(0).id(),
+                sourceDeployments.get(1).id(),
+                sourceDeployments.get(3).id(),
+                sourceDeployments.get(4).id()
+        ), rollbacks.stream()
+                .map(DeploymentResponse::rollbackOfDeploymentId)
+                .toList());
+
+        rollbacks.forEach(rollback -> completeDeployment(rollback.id(), DeploymentStatus.INSTALLED));
+
+        assertEquals(5, vehicles.stream()
+                .map(vehicle -> getVehicle(vehicle.id()).softwareVersion())
+                .filter("1.3.0"::equals)
+                .count());
+        assertEquals(DeploymentStatus.FAILED, getDeployment(sourceDeployments.get(2).id()).status());
+        assertEquals(RolloutStatus.PAUSED, getRollout(rollout.id()).status());
+        assertEquals(RolloutStageStatus.FAILED, getStages(rollout.id()).getFirst().status());
+    }
+
+    @Test
+    void shouldReuseAutomaticRollbackForManualRollbackRequest() {
+        createRelease("2.15.12");
+        SoftwareReleaseResponse rolloutRelease = createRelease("2.15.13");
+        createVehicles("7FC15500000000", 5, "2.15.12");
+        createRollout(
+                rolloutRelease.id(),
+                List.of(100),
+                BigDecimal.valueOf(5.0),
+                true
+        );
+        List<DeploymentResponse> sourceDeployments = deploymentsForReleaseSortedByVehicleVin(rolloutRelease.id());
+        completeDeployment(sourceDeployments.get(0).id(), DeploymentStatus.INSTALLED);
+        completeDeployment(sourceDeployments.get(1).id(), DeploymentStatus.INSTALLED);
+        completeDeployment(sourceDeployments.get(2).id(), DeploymentStatus.FAILED);
+        completeDeployment(sourceDeployments.get(3).id(), DeploymentStatus.INSTALLED);
+        completeDeployment(sourceDeployments.get(4).id(), DeploymentStatus.INSTALLED);
+        rolloutScheduler.evaluate();
+        DeploymentResponse automaticRollback = rollbackDeployments().getFirst();
+
+        DeploymentResponse manualRollback = rollbackDeployment(automaticRollback.rollbackOfDeploymentId());
+
+        assertEquals(automaticRollback.id(), manualRollback.id());
+        assertEquals(4, rollbackDeployments().size());
+    }
+
+    @Test
+    void shouldLeaveFailedAutomaticRollbackAsDurableRecoveryResult() {
+        createRelease("2.15.14");
+        SoftwareReleaseResponse rolloutRelease = createRelease("2.15.15");
+        createVehicles("7FC15700000000", 5, "2.15.14");
+        RolloutResponse rollout = createRollout(
+                rolloutRelease.id(),
+                List.of(100),
+                BigDecimal.valueOf(5.0),
+                true
+        );
+        List<DeploymentResponse> sourceDeployments = deploymentsForReleaseSortedByVehicleVin(rolloutRelease.id());
+        completeDeployment(sourceDeployments.get(0).id(), DeploymentStatus.INSTALLED);
+        completeDeployment(sourceDeployments.get(1).id(), DeploymentStatus.INSTALLED);
+        completeDeployment(sourceDeployments.get(2).id(), DeploymentStatus.FAILED);
+        completeDeployment(sourceDeployments.get(3).id(), DeploymentStatus.INSTALLED);
+        completeDeployment(sourceDeployments.get(4).id(), DeploymentStatus.INSTALLED);
+        rolloutScheduler.evaluate();
+        DeploymentResponse rollback = rollbackDeployments().getFirst();
+
+        completeDeployment(rollback.id(), DeploymentStatus.FAILED);
+        rolloutScheduler.evaluate();
+
+        assertEquals(DeploymentStatus.FAILED, getDeployment(rollback.id()).status());
+        assertEquals(DeploymentStatus.INSTALLED, getDeployment(rollback.rollbackOfDeploymentId()).status());
+        assertEquals(4, rollbackDeployments().size());
+        assertEquals(RolloutStatus.PAUSED, getRollout(rollout.id()).status());
+        assertEquals(RolloutStageStatus.FAILED, getStages(rollout.id()).getFirst().status());
+    }
+
+    @Test
+    void shouldContinueAutomaticRollbackWhenOneCandidateCannotBeRolledBack() {
+        createRelease("2.15.16");
+        SoftwareReleaseResponse rolloutRelease = createRelease("2.15.18");
+        createVehicle("7FC15900000000000", "2.15.17");
+        createVehicle("7FC15900000000001", "2.15.16");
+        createVehicle("7FC15900000000002", "2.15.16");
+        createVehicle("7FC15900000000003", "2.15.16");
+        createRollout(
+                rolloutRelease.id(),
+                List.of(100),
+                BigDecimal.valueOf(5.0),
+                true
+        );
+        List<DeploymentResponse> sourceDeployments = deploymentsForReleaseSortedByVehicleVin(rolloutRelease.id());
+        completeDeployment(sourceDeployments.get(0).id(), DeploymentStatus.INSTALLED);
+        completeDeployment(sourceDeployments.get(1).id(), DeploymentStatus.INSTALLED);
+        completeDeployment(sourceDeployments.get(2).id(), DeploymentStatus.FAILED);
+        completeDeployment(sourceDeployments.get(3).id(), DeploymentStatus.INSTALLED);
+
+        rolloutScheduler.evaluate();
+
+        List<DeploymentResponse> rollbacks = rollbackDeployments();
+        assertEquals(2, rollbacks.size());
+        assertEquals(List.of(
+                sourceDeployments.get(1).id(),
+                sourceDeployments.get(3).id()
+        ), rollbacks.stream()
+                .map(DeploymentResponse::rollbackOfDeploymentId)
+                .toList());
     }
 
     @Test
@@ -605,6 +851,28 @@ class RolloutIntegrationTest {
                 .getResponseBody();
     }
 
+    private RolloutResponse createRollout(
+            UUID releaseId,
+            List<Integer> stages,
+            BigDecimal failureThresholdPercent,
+            boolean automaticRollbackEnabled
+    ) {
+        return restClient.post()
+                .uri("/api/v1/rollouts")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of(
+                        "releaseId", releaseId,
+                        "stages", stages,
+                        "failureThresholdPercent", failureThresholdPercent,
+                        "automaticRollbackEnabled", automaticRollbackEnabled
+                ))
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody(RolloutResponse.class)
+                .returnResult()
+                .getResponseBody();
+    }
+
     private DeploymentResponse createDeployment(UUID vehicleId, UUID releaseId) {
         return restClient.post()
                 .uri("/api/v1/deployments")
@@ -667,6 +935,16 @@ class RolloutIntegrationTest {
                 .getResponseBody();
     }
 
+    private VehicleResponse getVehicle(UUID vehicleId) {
+        return restClient.get()
+                .uri("/api/v1/vehicles/" + vehicleId)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(VehicleResponse.class)
+                .returnResult()
+                .getResponseBody();
+    }
+
     private List<RolloutStageResponse> getStages(UUID rolloutId) {
         RolloutStageResponse[] stages = restClient.get()
                 .uri("/api/v1/rollouts/" + rolloutId + "/stages")
@@ -702,6 +980,28 @@ class RolloutIntegrationTest {
 
         return Arrays.stream(deployments)
                 .filter(deployment -> deployment.releaseId().equals(releaseId))
+                .toList();
+    }
+
+    private List<DeploymentResponse> deploymentsForReleaseSortedByVehicleVin(UUID releaseId) {
+        return deploymentsForRelease(releaseId)
+                .stream()
+                .sorted((left, right) -> getVehicle(left.vehicleId()).vin()
+                        .compareTo(getVehicle(right.vehicleId()).vin()))
+                .toList();
+    }
+
+    private List<DeploymentResponse> rollbackDeployments() {
+        DeploymentResponse[] deployments = restClient.get()
+                .uri("/api/v1/deployments")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(DeploymentResponse[].class)
+                .returnResult()
+                .getResponseBody();
+
+        return Arrays.stream(deployments)
+                .filter(deployment -> deployment.rollbackOfDeploymentId() != null)
                 .toList();
     }
 

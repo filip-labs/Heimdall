@@ -13,6 +13,8 @@ public interface RolloutRepository extends JpaRepository<Rollout, UUID> {
 
     List<Rollout> findAllByStatus(RolloutStatus status);
 
+    List<Rollout> findAllByStatusAndAutomaticRollbackEnabledTrue(RolloutStatus status);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from Rollout r where r.id = :id")
     Optional<Rollout> findByIdForUpdate(UUID id);

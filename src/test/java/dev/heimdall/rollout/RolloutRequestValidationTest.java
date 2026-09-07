@@ -46,7 +46,8 @@ class RolloutRequestValidationTest {
         return new CreateRolloutRequest(
                 UUID.randomUUID(),
                 stages,
-                BigDecimal.valueOf(5.0)
+                BigDecimal.valueOf(5.0),
+                null
         );
     }
 }

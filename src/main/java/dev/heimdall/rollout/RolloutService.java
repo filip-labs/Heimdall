@@ -56,6 +56,7 @@ public class RolloutService {
         Rollout rollout = rolloutRepository.save(new Rollout(
                 release,
                 request.failureThresholdPercent(),
+                Boolean.TRUE.equals(request.automaticRollbackEnabled()),
                 targetVehicles.size()
         ));
 

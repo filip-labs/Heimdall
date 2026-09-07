@@ -292,7 +292,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"releaseId\": \"{{releaseId}}\",\n  \"stages\": [5, 25, 50, 100],\n  \"failureThresholdPercent\": 5.0\n}"
+              "raw": "{\n  \"releaseId\": \"{{releaseId}}\",\n  \"stages\": [5, 25, 50, 100],\n  \"failureThresholdPercent\": 5.0,\n  \"automaticRollbackEnabled\": true\n}"
             },
             "url": "{{baseUrl}}/api/v1/rollouts"
           },

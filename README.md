@@ -163,7 +163,9 @@ Manual rollback is modeled as a new normal deployment with `POST /api/v1/deploym
 2.0.0
 ```
 
-Rollback deployments use the same OTA state machine, event trail, active-deployment protection, and vehicle software update behavior as any other deployment. Automatic rollback policy remains future M7C work.
+Rollback deployments use the same OTA state machine, event trail, active-deployment protection, and vehicle software update behavior as any other deployment.
+
+Automatic rollback is opt-in per rollout with `automaticRollbackEnabled`. When enabled, a health-gate failure still leaves the rollout `PAUSED` and the current stage `FAILED`; Heimdall then creates rollback deployments only for successfully installed deployments from that failed incremental stage. Failed installations, future stages, and vehicles that never received the bad release are untouched, and the rollout is not automatically resumed after recovery.
 
 A manual demo can validate the health gate by configuring one canary to fail deterministically:
 
@@ -305,7 +307,7 @@ M6A Staged Fleet Rollouts                            Done
 M6B Deterministic Failure Injection + Pause Demo     Done
 M7A Manual Rollout Controls                          Done
 M7B Rollback Deployments                             Done
-M7C Automatic Rollback Policy                        Next
+M7C Automatic Rollback Policy                        Done
 M8 Observability
 M9 Kafka / Event-driven Architecture
 M10 Scalability Testing

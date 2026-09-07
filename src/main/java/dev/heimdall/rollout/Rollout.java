@@ -25,6 +25,9 @@ public class Rollout {
     @Column(name = "failure_threshold_percent", nullable = false, precision = 5, scale = 2)
     private BigDecimal failureThresholdPercent;
 
+    @Column(name = "automatic_rollback_enabled", nullable = false)
+    private boolean automaticRollbackEnabled;
+
     @Column(name = "total_vehicles", nullable = false)
     private int totalVehicles;
 
@@ -43,6 +46,7 @@ public class Rollout {
     public Rollout(
             SoftwareRelease release,
             BigDecimal failureThresholdPercent,
+            boolean automaticRollbackEnabled,
             int totalVehicles
     ) {
         Instant now = Instant.now();
@@ -51,6 +55,7 @@ public class Rollout {
         this.release = release;
         this.status = RolloutStatus.RUNNING;
         this.failureThresholdPercent = failureThresholdPercent;
+        this.automaticRollbackEnabled = automaticRollbackEnabled;
         this.totalVehicles = totalVehicles;
         this.currentStageIndex = 0;
         this.createdAt = now;
@@ -127,6 +132,10 @@ public class Rollout {
 
     public BigDecimal getFailureThresholdPercent() {
         return failureThresholdPercent;
+    }
+
+    public boolean isAutomaticRollbackEnabled() {
+        return automaticRollbackEnabled;
     }
 
     public int getTotalVehicles() {

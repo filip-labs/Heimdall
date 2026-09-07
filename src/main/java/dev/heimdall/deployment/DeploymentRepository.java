@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -43,6 +44,19 @@ public interface DeploymentRepository
     long countByRolloutStage_IdAndStatusIn(
             UUID rolloutStageId,
             Collection<DeploymentStatus> statuses
+    );
+
+    @Query("""
+            select d.id
+            from Deployment d
+            join d.vehicle v
+            where d.rolloutStage.id = :rolloutStageId
+              and d.status = :status
+            order by v.vin asc
+            """)
+    List<UUID> findIdsByRolloutStageIdAndStatusOrderByVehicleVinAsc(
+            UUID rolloutStageId,
+            DeploymentStatus status
     );
 
 }

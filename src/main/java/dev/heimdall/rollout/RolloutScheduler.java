@@ -7,9 +7,14 @@ import org.springframework.stereotype.Component;
 public class RolloutScheduler {
 
     private final RolloutEvaluator rolloutEvaluator;
+    private final AutomaticRollbackCoordinator automaticRollbackCoordinator;
 
-    public RolloutScheduler(RolloutEvaluator rolloutEvaluator) {
+    public RolloutScheduler(
+            RolloutEvaluator rolloutEvaluator,
+            AutomaticRollbackCoordinator automaticRollbackCoordinator
+    ) {
         this.rolloutEvaluator = rolloutEvaluator;
+        this.automaticRollbackCoordinator = automaticRollbackCoordinator;
     }
 
     @Scheduled(
@@ -18,5 +23,6 @@ public class RolloutScheduler {
     )
     public void evaluate() {
         rolloutEvaluator.evaluateRunningRollouts();
+        automaticRollbackCoordinator.processEligibleRollouts();
     }
 }

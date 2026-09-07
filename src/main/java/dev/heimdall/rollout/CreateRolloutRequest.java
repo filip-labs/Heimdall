@@ -21,7 +21,9 @@ public record CreateRolloutRequest(
         @NotNull
         @DecimalMin("0.0")
         @DecimalMax("100.0")
-        BigDecimal failureThresholdPercent
+        BigDecimal failureThresholdPercent,
+
+        Boolean automaticRollbackEnabled
 ) {
 
     @AssertTrue(message = "Stages must be between 1 and 100, strictly increasing, and end at 100")
