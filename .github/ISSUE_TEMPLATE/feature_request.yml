@@ -1,0 +1,64 @@
+name: Feature Request
+description: Suggest an improvement or new capability for Heimdall
+title: "[Feature]: "
+labels: []
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before submitting, please check the existing Heimdall Roadmap and issues to avoid proposing duplicate functionality. A request is not automatically a roadmap commitment.
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Problem / motivation
+      description: What problem would this solve, and who is affected?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-behavior
+    attributes:
+      label: Proposed behavior
+      description: Describe the behavior or outcome you would like.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      options:
+        - Backend
+        - OTA
+        - Fleet Simulator
+        - Rollout
+        - Reliability
+        - Observability
+        - Messaging
+        - Performance
+        - Security
+        - Infrastructure
+        - Operator UI
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe any alternatives, workarounds, or trade-offs you considered.
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria / expected outcome
+      description: How would we know the request is complete and working as intended?
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true

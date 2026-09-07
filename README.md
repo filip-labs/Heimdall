@@ -1,5 +1,8 @@
 # Heimdall
 
+[![Heimdall CI](https://github.com/filip-labs/Heimdall/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/filip-labs/Heimdall/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 Heimdall is a connected-vehicle OTA control plane and fleet simulator built to explore reliable software delivery to software-defined vehicles.
 
 ## Overview
@@ -254,6 +257,13 @@ go test -race ./...
 - Stage health is calculated against the current stage's incremental cohort.
 - Artifact integrity is verified before install.
 - Simulator retries are limited to transient request errors and retryable HTTP statuses.
+
+## Project Resources
+
+- [Heimdall Roadmap](https://github.com/users/filip-labs/projects/4/views/1)
+- [GitHub Issues](https://github.com/filip-labs/Heimdall/issues)
+- [Postman API collection](postman/Heimdall.postman_collection.json)
+- [Architecture overview](#current-architecture)
 
 ## Roadmap
 
