@@ -25,6 +25,8 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -291,7 +293,7 @@ class RolloutIntegrationTest {
         completePendingDeployments(rolloutRelease.id(), 2, DeploymentStatus.FAILED);
         rolloutScheduler.evaluate();
 
-        assertEquals(false, getRollout(rollout.id()).automaticRollbackEnabled());
+        assertFalse(getRollout(rollout.id()).automaticRollbackEnabled());
         assertEquals(RolloutStatus.PAUSED, getRollout(rollout.id()).status());
         assertEquals(0, rollbackDeployments().size());
     }
@@ -301,11 +303,10 @@ class RolloutIntegrationTest {
         createRelease("2.15.6");
         SoftwareReleaseResponse rolloutRelease = createRelease("2.15.7");
         createVehicles("7FC15600000000", 10, "2.15.6");
-        RolloutResponse rollout = createRollout(
+        RolloutResponse rollout = createAutomaticRollbackRollout(
                 rolloutRelease.id(),
                 List.of(50, 100),
-                BigDecimal.valueOf(20.0),
-                true
+                BigDecimal.valueOf(20.0)
         );
 
         List<UUID> firstStageDeploymentIds = deploymentsForRelease(rolloutRelease.id())
@@ -340,11 +341,10 @@ class RolloutIntegrationTest {
         createRelease("2.15.8");
         SoftwareReleaseResponse rolloutRelease = createRelease("2.15.9");
         createVehicles("7FC15800000000", 10, "2.15.8");
-        RolloutResponse rollout = createRollout(
+        RolloutResponse rollout = createAutomaticRollbackRollout(
                 rolloutRelease.id(),
                 List.of(50, 100),
-                BigDecimal.valueOf(20.0),
-                true
+                BigDecimal.valueOf(20.0)
         );
 
         controlRollout(rollout.id(), "pause");
@@ -361,11 +361,10 @@ class RolloutIntegrationTest {
         createRelease("2.15.10");
         SoftwareReleaseResponse rolloutRelease = createRelease("2.15.11");
         createVehicles("7FC15100000000", 10, "2.15.10");
-        RolloutResponse rollout = createRollout(
+        RolloutResponse rollout = createAutomaticRollbackRollout(
                 rolloutRelease.id(),
                 List.of(50, 100),
-                BigDecimal.valueOf(20.0),
-                true
+                BigDecimal.valueOf(20.0)
         );
 
         completePendingDeployments(rolloutRelease.id(), 3, DeploymentStatus.INSTALLED);
@@ -392,11 +391,10 @@ class RolloutIntegrationTest {
         createRelease("1.3.0");
         SoftwareReleaseResponse rolloutRelease = createRelease("1.4.0");
         List<VehicleResponse> vehicles = createVehicles("7FC15300000000", 5, "1.3.0");
-        RolloutResponse rollout = createRollout(
+        RolloutResponse rollout = createAutomaticRollbackRollout(
                 rolloutRelease.id(),
                 List.of(100),
-                BigDecimal.valueOf(5.0),
-                true
+                BigDecimal.valueOf(5.0)
         );
         List<DeploymentResponse> sourceDeployments = deploymentsForReleaseSortedByVehicleVin(rolloutRelease.id());
 
@@ -408,27 +406,19 @@ class RolloutIntegrationTest {
         rolloutScheduler.evaluate();
 
         List<DeploymentResponse> rollbacks = rollbackDeployments();
-        assertEquals(RolloutStatus.PAUSED, getRollout(rollout.id()).status());
-        assertEquals(RolloutStageStatus.FAILED, getStages(rollout.id()).getFirst().status());
-        assertEquals(4, rollbacks.size());
-        assertEquals(List.of(
-                sourceDeployments.get(0).id(),
-                sourceDeployments.get(1).id(),
-                sourceDeployments.get(3).id(),
-                sourceDeployments.get(4).id()
-        ), rollbacks.stream()
-                .map(DeploymentResponse::rollbackOfDeploymentId)
-                .toList());
+        assertFailedAutomaticRollbackState(rollout.id());
+        assertRollbackSources(rollbacks, List.of(
+                sourceDeployments.get(0),
+                sourceDeployments.get(1),
+                sourceDeployments.get(3),
+                sourceDeployments.get(4)
+        ));
 
         rollbacks.forEach(rollback -> completeDeployment(rollback.id(), DeploymentStatus.INSTALLED));
 
-        assertEquals(5, vehicles.stream()
-                .map(vehicle -> getVehicle(vehicle.id()).softwareVersion())
-                .filter("1.3.0"::equals)
-                .count());
+        assertVehicleVersions(vehicles, "1.3.0");
         assertEquals(DeploymentStatus.FAILED, getDeployment(sourceDeployments.get(2).id()).status());
-        assertEquals(RolloutStatus.PAUSED, getRollout(rollout.id()).status());
-        assertEquals(RolloutStageStatus.FAILED, getStages(rollout.id()).getFirst().status());
+        assertFailedAutomaticRollbackState(rollout.id());
     }
 
     @Test
@@ -436,11 +426,10 @@ class RolloutIntegrationTest {
         createRelease("2.15.12");
         SoftwareReleaseResponse rolloutRelease = createRelease("2.15.13");
         createVehicles("7FC15500000000", 5, "2.15.12");
-        createRollout(
+        createAutomaticRollbackRollout(
                 rolloutRelease.id(),
                 List.of(100),
-                BigDecimal.valueOf(5.0),
-                true
+                BigDecimal.valueOf(5.0)
         );
         List<DeploymentResponse> sourceDeployments = deploymentsForReleaseSortedByVehicleVin(rolloutRelease.id());
         completeDeployment(sourceDeployments.get(0).id(), DeploymentStatus.INSTALLED);
@@ -462,11 +451,10 @@ class RolloutIntegrationTest {
         createRelease("2.15.14");
         SoftwareReleaseResponse rolloutRelease = createRelease("2.15.15");
         createVehicles("7FC15700000000", 5, "2.15.14");
-        RolloutResponse rollout = createRollout(
+        RolloutResponse rollout = createAutomaticRollbackRollout(
                 rolloutRelease.id(),
                 List.of(100),
-                BigDecimal.valueOf(5.0),
-                true
+                BigDecimal.valueOf(5.0)
         );
         List<DeploymentResponse> sourceDeployments = deploymentsForReleaseSortedByVehicleVin(rolloutRelease.id());
         completeDeployment(sourceDeployments.get(0).id(), DeploymentStatus.INSTALLED);
@@ -495,11 +483,10 @@ class RolloutIntegrationTest {
         createVehicle("7FC15900000000001", "2.15.16");
         createVehicle("7FC15900000000002", "2.15.16");
         createVehicle("7FC15900000000003", "2.15.16");
-        createRollout(
+        createAutomaticRollbackRollout(
                 rolloutRelease.id(),
                 List.of(100),
-                BigDecimal.valueOf(5.0),
-                true
+                BigDecimal.valueOf(5.0)
         );
         List<DeploymentResponse> sourceDeployments = deploymentsForReleaseSortedByVehicleVin(rolloutRelease.id());
         completeDeployment(sourceDeployments.get(0).id(), DeploymentStatus.INSTALLED);
@@ -851,11 +838,10 @@ class RolloutIntegrationTest {
                 .getResponseBody();
     }
 
-    private RolloutResponse createRollout(
+    private RolloutResponse createAutomaticRollbackRollout(
             UUID releaseId,
             List<Integer> stages,
-            BigDecimal failureThresholdPercent,
-            boolean automaticRollbackEnabled
+            BigDecimal failureThresholdPercent
     ) {
         return restClient.post()
                 .uri("/api/v1/rollouts")
@@ -864,7 +850,7 @@ class RolloutIntegrationTest {
                         "releaseId", releaseId,
                         "stages", stages,
                         "failureThresholdPercent", failureThresholdPercent,
-                        "automaticRollbackEnabled", automaticRollbackEnabled
+                        "automaticRollbackEnabled", true
                 ))
                 .exchange()
                 .expectStatus().isCreated()
@@ -873,8 +859,8 @@ class RolloutIntegrationTest {
                 .getResponseBody();
     }
 
-    private DeploymentResponse createDeployment(UUID vehicleId, UUID releaseId) {
-        return restClient.post()
+    private void createDeployment(UUID vehicleId, UUID releaseId) {
+        restClient.post()
                 .uri("/api/v1/deployments")
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(Map.of(
@@ -884,8 +870,7 @@ class RolloutIntegrationTest {
                 .exchange()
                 .expectStatus().isCreated()
                 .expectBody(DeploymentResponse.class)
-                .returnResult()
-                .getResponseBody();
+                .returnResult();
     }
 
     private DeploymentResponse rollbackDeployment(UUID deploymentId) {
@@ -925,6 +910,36 @@ class RolloutIntegrationTest {
                 .expectStatus().isEqualTo(409);
     }
 
+    private void assertFailedAutomaticRollbackState(UUID rolloutId) {
+        assertEquals(RolloutStatus.PAUSED, getRollout(rolloutId).status());
+        assertEquals(RolloutStageStatus.FAILED, getStages(rolloutId).getFirst().status());
+    }
+
+    private void assertRollbackSources(
+            List<DeploymentResponse> rollbacks,
+            List<DeploymentResponse> expectedSourceDeployments
+    ) {
+        assertEquals(expectedSourceDeployments.size(), rollbacks.size());
+        assertEquals(
+                expectedSourceDeployments.stream()
+                        .map(DeploymentResponse::id)
+                        .toList(),
+                rollbacks.stream()
+                        .map(DeploymentResponse::rollbackOfDeploymentId)
+                        .toList()
+        );
+    }
+
+    private void assertVehicleVersions(
+            List<VehicleResponse> vehicles,
+            String expectedSoftwareVersion
+    ) {
+        assertEquals(vehicles.size(), vehicles.stream()
+                .map(vehicle -> getVehicle(vehicle.id()).softwareVersion())
+                .filter(expectedSoftwareVersion::equals)
+                .count());
+    }
+
     private DeploymentResponse getDeployment(UUID deploymentId) {
         return restClient.get()
                 .uri("/api/v1/deployments/" + deploymentId)
@@ -954,6 +969,7 @@ class RolloutIntegrationTest {
                 .returnResult()
                 .getResponseBody();
 
+        assertNotNull(stages);
         return Arrays.asList(stages);
     }
 
@@ -978,6 +994,7 @@ class RolloutIntegrationTest {
                 .returnResult()
                 .getResponseBody();
 
+        assertNotNull(deployments);
         return Arrays.stream(deployments)
                 .filter(deployment -> deployment.releaseId().equals(releaseId))
                 .toList();
@@ -1000,6 +1017,7 @@ class RolloutIntegrationTest {
                 .returnResult()
                 .getResponseBody();
 
+        assertNotNull(deployments);
         return Arrays.stream(deployments)
                 .filter(deployment -> deployment.rollbackOfDeploymentId() != null)
                 .toList();

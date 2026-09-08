@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -407,7 +408,7 @@ func TestDownloadAndVerifyArtifactRetriesTransientFailures(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected retry flow to succeed, got %v", err)
 	}
-	defer os.Remove(path)
+	removeTestArtifact(t, path)
 
 	if attempts != 3 {
 		t.Fatalf("expected 3 attempts, got %d", attempts)
@@ -755,6 +756,16 @@ func newTestAgent(
 		DeploymentPollInterval: time.Second,
 		InstallWait:            func(context.Context, time.Duration) error { return nil },
 	}
+}
+
+func removeTestArtifact(t *testing.T, path string) {
+	t.Helper()
+
+	t.Cleanup(func() {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("failed to remove test artifact %s: %v", path, err)
+		}
+	})
 }
 
 type deploymentStatusUpdate struct {

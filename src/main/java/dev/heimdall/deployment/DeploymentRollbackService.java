@@ -48,7 +48,7 @@ public class DeploymentRollbackService {
 
         if (deploymentRepository.existsByVehicle_IdAndStatusIn(
                 vehicle.getId(),
-                DeploymentService.ACTIVE_STATUSES
+                DeploymentService.activeStatuses()
         )) {
             throw new ConflictException("Vehicle already has an active deployment");
         }

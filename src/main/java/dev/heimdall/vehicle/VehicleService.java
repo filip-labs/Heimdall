@@ -42,7 +42,7 @@ public class VehicleService {
     }
 
     @Transactional
-    public int markStaleVehiclesOffline(Instant cutoff) {
+    public void markStaleVehiclesOffline(Instant cutoff) {
         List<Vehicle> staleVehicles =
                 vehicleRepository.findAllByConnectivityStatusAndLastSeenAtBefore(
                         ConnectivityStatus.ONLINE,
@@ -50,8 +50,6 @@ public class VehicleService {
                 );
 
         staleVehicles.forEach(Vehicle::markOffline);
-
-        return staleVehicles.size();
     }
 
     @Transactional(readOnly = true)

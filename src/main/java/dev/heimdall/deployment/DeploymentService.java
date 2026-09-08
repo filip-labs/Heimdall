@@ -12,7 +12,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -49,7 +48,7 @@ public class DeploymentService {
         return DeploymentResponse.from(createDeployment(vehicle, release, null, null));
     }
 
-    public Deployment createForRolloutStage(
+    public void createForRolloutStage(
             Vehicle vehicle,
             SoftwareRelease release,
             RolloutStage rolloutStage
@@ -65,7 +64,7 @@ public class DeploymentService {
             throw new ConflictException("Vehicle already has an active deployment");
         }
 
-        return createDeployment(vehicle, release, rolloutStage, null);
+        createDeployment(vehicle, release, rolloutStage, null);
     }
 
     Deployment createRollbackDeployment(
@@ -166,13 +165,17 @@ public class DeploymentService {
                 .toList();
     }
 
-    public static final Set<DeploymentStatus> ACTIVE_STATUSES =
-            EnumSet.of(
+    private static final Set<DeploymentStatus> ACTIVE_STATUSES =
+            Set.of(
                     DeploymentStatus.PENDING,
                     DeploymentStatus.DOWNLOADING,
                     DeploymentStatus.DOWNLOADED,
                     DeploymentStatus.INSTALLING
             );
+
+    public static Set<DeploymentStatus> activeStatuses() {
+        return ACTIVE_STATUSES;
+    }
 
     @Transactional(readOnly = true)
     public Optional<DeploymentResponse> getActiveForVehicle(UUID vehicleId) {

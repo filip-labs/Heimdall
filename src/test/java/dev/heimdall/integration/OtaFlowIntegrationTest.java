@@ -24,6 +24,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -79,10 +80,12 @@ class OtaFlowIntegrationTest {
                 .returnResult()
                 .getResponseBody();
 
+        assertNotNull(updatedVehicle);
         assertEquals(
                 "1.1.0",
                 updatedVehicle.softwareVersion()
         );
+        assertNotNull(completedDeployment);
         assertEquals("1.0.0", completedDeployment.sourceSoftwareVersion());
         assertEquals("1.1.0", completedDeployment.targetSoftwareVersion());
         assertEquals(DeploymentStatus.INSTALLED, completedDeployment.status());
@@ -304,6 +307,7 @@ class OtaFlowIntegrationTest {
                 .returnResult()
                 .getResponseBody();
 
+        assertNotNull(resolvedVehicle);
         assertEquals(vehicle.id(), resolvedVehicle.id());
         assertEquals(vehicle.vin(), resolvedVehicle.vin());
         assertEquals(vehicle.softwareVersion(), resolvedVehicle.softwareVersion());
@@ -623,6 +627,7 @@ class OtaFlowIntegrationTest {
                 .returnResult()
                 .getResponseBody();
 
+        assertNotNull(deployments);
         return Arrays.stream(deployments)
                 .filter(deployment -> deployment.vehicleId().equals(vehicleId))
                 .toList();
@@ -699,6 +704,7 @@ class OtaFlowIntegrationTest {
                 .returnResult()
                 .getResponseBody();
 
+        assertNotNull(events);
         return Arrays.asList(events);
     }
 

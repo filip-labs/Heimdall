@@ -88,7 +88,7 @@ func (d *artifactDownloader) downloadAndVerifyArtifactOnce(
 	ctx context.Context,
 	artifactURL string,
 	expectedChecksum string,
-) (string, error) {
+) (artifactPath string, err error) {
 	request, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodGet,
@@ -109,7 +109,21 @@ func (d *artifactDownloader) downloadAndVerifyArtifactOnce(
 
 		return "", downloadErr
 	}
-	defer response.Body.Close()
+	defer func() {
+		if closeErr := response.Body.Close(); closeErr != nil {
+			wrappedCloseErr := fmt.Errorf(
+				"failed to close artifact response body: %w",
+				closeErr,
+			)
+			if err == nil && artifactPath != "" {
+				err = errors.Join(wrappedCloseErr, removeTemporaryArtifact(artifactPath))
+				artifactPath = ""
+				return
+			}
+
+			err = errors.Join(err, wrappedCloseErr)
+		}
+	}()
 
 	if response.StatusCode != http.StatusOK {
 		statusErr := fmt.Errorf(
@@ -140,37 +154,50 @@ func (d *artifactDownloader) downloadAndVerifyArtifactOnce(
 		io.MultiWriter(file, hash),
 		response.Body,
 	); err != nil {
-		file.Close()
-		os.Remove(path)
-
-		return "", fmt.Errorf(
-			"failed to store artifact: %w",
-			err,
+		return "", errors.Join(
+			fmt.Errorf("failed to store artifact: %w", err),
+			closeArtifactFile(file),
+			removeTemporaryArtifact(path),
 		)
 	}
 
 	if err := file.Close(); err != nil {
-		os.Remove(path)
-
-		return "", fmt.Errorf(
-			"failed to close artifact file: %w",
-			err,
+		return "", errors.Join(
+			fmt.Errorf("failed to close artifact file: %w", err),
+			removeTemporaryArtifact(path),
 		)
 	}
 
 	actualChecksum := hex.EncodeToString(hash.Sum(nil))
 
 	if !strings.EqualFold(actualChecksum, expectedChecksum) {
-		os.Remove(path)
-
-		return "", fmt.Errorf(
-			"checksum mismatch: expected %s but got %s",
-			expectedChecksum,
-			actualChecksum,
+		return "", errors.Join(
+			fmt.Errorf(
+				"checksum mismatch: expected %s but got %s",
+				expectedChecksum,
+				actualChecksum,
+			),
+			removeTemporaryArtifact(path),
 		)
 	}
 
 	return path, nil
+}
+
+func closeArtifactFile(file *os.File) error {
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("failed to close artifact file: %w", err)
+	}
+
+	return nil
+}
+
+func removeTemporaryArtifact(path string) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("failed to remove temporary artifact %s: %w", path, err)
+	}
+
+	return nil
 }
 
 func (d *artifactDownloader) retryDelay(attempt int) time.Duration {

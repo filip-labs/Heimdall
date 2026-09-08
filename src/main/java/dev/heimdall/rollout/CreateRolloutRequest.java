@@ -28,18 +28,18 @@ public record CreateRolloutRequest(
         Boolean automaticRollbackEnabled
 ) {
 
-    @AssertTrue(message = "Stages must be between 1 and 100, strictly increasing, and end at 100")
+    @AssertTrue(message = "stages must be strictly increasing and end at 100")
     public boolean isValidStages() {
         if (stages == null || stages.isEmpty()) {
             return true;
         }
 
-        int previous = 0;
+        int previousStage = 0;
         for (Integer stage : stages) {
-            if (stage == null || stage < 1 || stage > 100 || stage <= previous) {
+            if (stage == null || stage <= previousStage || stage < 1 || stage > 100) {
                 return false;
             }
-            previous = stage;
+            previousStage = stage;
         }
 
         return stages.getLast() == 100;

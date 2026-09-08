@@ -53,15 +53,13 @@ func (a *VehicleAgent) sendHeartbeat(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer a.closeResponseBody(response.Body)
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		body, _ := io.ReadAll(response.Body)
-
 		return fmt.Errorf(
 			"heartbeat returned %d: %s",
 			response.StatusCode,
-			string(body),
+			readResponseBody(response.Body),
 		)
 	}
 
@@ -91,19 +89,17 @@ func (a *VehicleAgent) getActiveDeployment(
 	if err != nil {
 		return nil, err
 	}
-	defer response.Body.Close()
+	defer a.closeResponseBody(response.Body)
 
 	if response.StatusCode == http.StatusNoContent {
 		return nil, nil
 	}
 
 	if response.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(response.Body)
-
 		return nil, fmt.Errorf(
 			"deployment lookup returned %d: %s",
 			response.StatusCode,
-			string(body),
+			readResponseBody(response.Body),
 		)
 	}
 
@@ -157,15 +153,13 @@ func (a *VehicleAgent) updateDeploymentStatus(
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer a.closeResponseBody(response.Body)
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		responseBody, _ := io.ReadAll(response.Body)
-
 		return fmt.Errorf(
 			"status update returned %d: %s",
 			response.StatusCode,
-			string(responseBody),
+			readResponseBody(response.Body),
 		)
 	}
 
@@ -203,7 +197,7 @@ func (a *VehicleAgent) postVehicleRegistration(
 	if err != nil {
 		return vehicleResponse{}, 0, err
 	}
-	defer response.Body.Close()
+	defer a.closeResponseBody(response.Body)
 
 	if response.StatusCode == http.StatusCreated {
 		var vehicle vehicleResponse
@@ -219,12 +213,10 @@ func (a *VehicleAgent) postVehicleRegistration(
 		return vehicleResponse{}, response.StatusCode, nil
 	}
 
-	responseBody, _ := io.ReadAll(response.Body)
-
 	return vehicleResponse{}, response.StatusCode, fmt.Errorf(
 		"vehicle registration returned %d: %s",
 		response.StatusCode,
-		string(responseBody),
+		readResponseBody(response.Body),
 	)
 }
 
@@ -251,15 +243,13 @@ func (a *VehicleAgent) getVehicleByVIN(
 	if err != nil {
 		return vehicleResponse{}, err
 	}
-	defer response.Body.Close()
+	defer a.closeResponseBody(response.Body)
 
 	if response.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(response.Body)
-
 		return vehicleResponse{}, fmt.Errorf(
 			"vehicle lookup returned %d: %s",
 			response.StatusCode,
-			string(body),
+			readResponseBody(response.Body),
 		)
 	}
 
@@ -270,4 +260,19 @@ func (a *VehicleAgent) getVehicleByVIN(
 	}
 
 	return vehicle, nil
+}
+
+func (a *VehicleAgent) closeResponseBody(body io.Closer) {
+	if err := body.Close(); err != nil {
+		a.logf("failed to close response body: %v", err)
+	}
+}
+
+func readResponseBody(body io.Reader) string {
+	responseBody, err := io.ReadAll(body)
+	if err != nil {
+		return fmt.Sprintf("failed to read response body: %v", err)
+	}
+
+	return string(responseBody)
 }

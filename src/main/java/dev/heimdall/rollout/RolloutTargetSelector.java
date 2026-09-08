@@ -33,7 +33,7 @@ public class RolloutTargetSelector {
                 .toList();
         if (deploymentRepository.existsByVehicle_IdInAndStatusIn(
                 targetVehicleIds,
-                DeploymentService.ACTIVE_STATUSES
+                DeploymentService.activeStatuses()
         )) {
             throw new ConflictException(
                     "At least one target vehicle already has an active deployment"
