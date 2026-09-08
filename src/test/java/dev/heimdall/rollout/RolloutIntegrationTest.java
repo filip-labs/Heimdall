@@ -51,6 +51,15 @@ class RolloutIntegrationTest {
     private RolloutScheduler rolloutScheduler;
 
     @Autowired
+    private AutomaticRollbackCoordinator automaticRollbackCoordinator;
+
+    @Autowired
+    private AutomaticRollbackWorker automaticRollbackWorker;
+
+    @Autowired
+    private RolloutRepository rolloutRepository;
+
+    @Autowired
     private RolloutTargetRepository rolloutTargetRepository;
 
     @Autowired
@@ -295,6 +304,41 @@ class RolloutIntegrationTest {
 
         assertFalse(getRollout(rollout.id()).automaticRollbackEnabled());
         assertEquals(RolloutStatus.PAUSED, getRollout(rollout.id()).status());
+        assertEquals(0, rollbackDeployments().size());
+    }
+
+    @Test
+    void shouldNotRecoverCancelledAutomaticRollbackRollout() {
+        RolloutResponse rollout = prepareFailedAutomaticRollbackRollout(
+                "2.15.40",
+                "2.15.41",
+                "7FC15410000000"
+        );
+
+        controlRollout(rollout.id(), "cancel");
+        automaticRollbackCoordinator.processEligibleRollouts();
+
+        assertEquals(RolloutStatus.CANCELLED, getRollout(rollout.id()).status());
+        assertEquals(0, rollbackDeployments().size());
+    }
+
+    @Test
+    void shouldNotRecoverStalePausedDiscoveryAfterCancellation() {
+        RolloutResponse rollout = prepareFailedAutomaticRollbackRollout(
+                "2.15.42",
+                "2.15.43",
+                "7FC15430000000"
+        );
+        List<UUID> discoveredRolloutIds = rolloutRepository
+                .findIdsByStatusAndAutomaticRollbackEnabledTrue(RolloutStatus.PAUSED);
+        assertEquals(List.of(rollout.id()), discoveredRolloutIds);
+
+        controlRollout(rollout.id(), "cancel");
+        List<UUID> sourceDeploymentIds = automaticRollbackWorker
+                .findEligibleSourceDeployments(discoveredRolloutIds.getFirst());
+
+        assertEquals(RolloutStatus.CANCELLED, getRollout(rollout.id()).status());
+        assertEquals(List.of(), sourceDeploymentIds);
         assertEquals(0, rollbackDeployments().size());
     }
 
@@ -908,6 +952,29 @@ class RolloutIntegrationTest {
                 .uri("/api/v1/rollouts/" + rolloutId + "/" + action)
                 .exchange()
                 .expectStatus().isEqualTo(409);
+    }
+
+    private RolloutResponse prepareFailedAutomaticRollbackRollout(
+            String sourceVersion,
+            String targetVersion,
+            String vinPrefix
+    ) {
+        createRelease(sourceVersion);
+        SoftwareReleaseResponse rolloutRelease = createRelease(targetVersion);
+        createVehicles(vinPrefix, 5, sourceVersion);
+        RolloutResponse rollout = createAutomaticRollbackRollout(
+                rolloutRelease.id(),
+                List.of(100),
+                BigDecimal.valueOf(5.0)
+        );
+
+        completePendingDeployments(rolloutRelease.id(), 3, DeploymentStatus.INSTALLED);
+        completePendingDeployments(rolloutRelease.id(), 2, DeploymentStatus.FAILED);
+        rolloutEvaluator.evaluateRollout(rollout.id());
+
+        assertFailedAutomaticRollbackState(rollout.id());
+
+        return rollout;
     }
 
     private void assertFailedAutomaticRollbackState(UUID rolloutId) {

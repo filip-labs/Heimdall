@@ -1,9 +1,7 @@
 package dev.heimdall.rollout;
 
 import dev.heimdall.api.ConflictException;
-import dev.heimdall.deployment.DeploymentRepository;
 import dev.heimdall.deployment.DeploymentRollbackService;
-import dev.heimdall.deployment.DeploymentStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -17,36 +15,21 @@ import java.util.UUID;
 public class AutomaticRollbackCoordinator {
 
     private final RolloutRepository rolloutRepository;
-    private final RolloutStageRepository rolloutStageRepository;
-    private final DeploymentRepository deploymentRepository;
+    private final AutomaticRollbackWorker automaticRollbackWorker;
     private final DeploymentRollbackService deploymentRollbackService;
 
     public void processEligibleRollouts() {
-        List<Rollout> rollouts = rolloutRepository
-                .findAllByStatusAndAutomaticRollbackEnabledTrue(RolloutStatus.PAUSED);
+        List<UUID> rolloutIds = rolloutRepository
+                .findIdsByStatusAndAutomaticRollbackEnabledTrue(RolloutStatus.PAUSED);
 
-        for (Rollout rollout : rollouts) {
-            processRollout(rollout);
+        for (UUID rolloutId : rolloutIds) {
+            processRollout(rolloutId);
         }
     }
 
-    private void processRollout(Rollout rollout) {
-        RolloutStage stage = rolloutStageRepository
-                .findByRollout_IdAndStageIndex(
-                        rollout.getId(),
-                        rollout.getCurrentStageIndex()
-                )
-                .orElseThrow(() -> new IllegalStateException("Current rollout stage not found"));
-
-        if (stage.getStatus() != RolloutStageStatus.FAILED) {
-            return;
-        }
-
-        List<UUID> sourceDeploymentIds = deploymentRepository
-                .findIdsByRolloutStageIdAndStatusOrderByVehicleVinAsc(
-                        stage.getId(),
-                        DeploymentStatus.INSTALLED
-                );
+    private void processRollout(UUID rolloutId) {
+        List<UUID> sourceDeploymentIds = automaticRollbackWorker
+                .findEligibleSourceDeployments(rolloutId);
 
         for (UUID sourceDeploymentId : sourceDeploymentIds) {
             createRollback(sourceDeploymentId);
