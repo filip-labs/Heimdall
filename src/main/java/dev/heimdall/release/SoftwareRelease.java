@@ -1,12 +1,17 @@
 package dev.heimdall.release;
 
 import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 import java.util.UUID;
 
+@Getter
 @Entity
 @Table(name = "software_release")
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class SoftwareRelease {
 
     @Id
@@ -27,9 +32,6 @@ public class SoftwareRelease {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
-    protected SoftwareRelease() {
-    }
-
     public SoftwareRelease(
             String version,
             String description,
@@ -42,29 +44,5 @@ public class SoftwareRelease {
         this.artifactUrl = artifactUrl;
         this.checksum = checksum;
         this.createdAt = Instant.now();
-    }
-
-    public UUID getId() {
-        return id;
-    }
-
-    public String getVersion() {
-        return version;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public String getArtifactUrl() {
-        return artifactUrl;
-    }
-
-    public String getChecksum() {
-        return checksum;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
     }
 }

@@ -1,12 +1,17 @@
 package dev.heimdall.rollout;
 
 import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 import java.util.UUID;
 
+@Getter
 @Entity
 @Table(name = "rollout_stage")
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class RolloutStage {
 
     @Id
@@ -34,9 +39,6 @@ public class RolloutStage {
 
     @Column(name = "completed_at")
     private Instant completedAt;
-
-    protected RolloutStage() {
-    }
 
     public RolloutStage(
             Rollout rollout,
@@ -69,37 +71,5 @@ public class RolloutStage {
     public void fail() {
         this.status = RolloutStageStatus.FAILED;
         this.completedAt = Instant.now();
-    }
-
-    public UUID getId() {
-        return id;
-    }
-
-    public Rollout getRollout() {
-        return rollout;
-    }
-
-    public int getStageIndex() {
-        return stageIndex;
-    }
-
-    public int getTargetPercentage() {
-        return targetPercentage;
-    }
-
-    public int getTargetVehicleCount() {
-        return targetVehicleCount;
-    }
-
-    public RolloutStageStatus getStatus() {
-        return status;
-    }
-
-    public Instant getStartedAt() {
-        return startedAt;
-    }
-
-    public Instant getCompletedAt() {
-        return completedAt;
     }
 }

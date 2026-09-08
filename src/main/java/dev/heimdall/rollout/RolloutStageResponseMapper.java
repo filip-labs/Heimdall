@@ -2,16 +2,14 @@ package dev.heimdall.rollout;
 
 import dev.heimdall.deployment.DeploymentRepository;
 import dev.heimdall.deployment.DeploymentStatus;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 @Component
+@RequiredArgsConstructor
 public class RolloutStageResponseMapper {
 
     private final DeploymentRepository deploymentRepository;
-
-    public RolloutStageResponseMapper(DeploymentRepository deploymentRepository) {
-        this.deploymentRepository = deploymentRepository;
-    }
 
     public RolloutStageResponse from(RolloutStage stage) {
         long deploymentCount = deploymentRepository.countByRolloutStage_Id(stage.getId());

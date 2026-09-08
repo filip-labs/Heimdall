@@ -1,6 +1,7 @@
 package dev.heimdall.release;
 
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -9,13 +10,10 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/releases")
+@RequiredArgsConstructor
 public class SoftwareReleaseController {
 
     private final SoftwareReleaseService service;
-
-    public SoftwareReleaseController(SoftwareReleaseService service) {
-        this.service = service;
-    }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)

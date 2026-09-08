@@ -1,6 +1,7 @@
 package dev.heimdall.vehicle;
 
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -9,13 +10,10 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/vehicles")
+@RequiredArgsConstructor
 public class VehicleController {
 
     private final VehicleService vehicleService;
-
-    public VehicleController(VehicleService vehicleService) {
-        this.vehicleService = vehicleService;
-    }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)

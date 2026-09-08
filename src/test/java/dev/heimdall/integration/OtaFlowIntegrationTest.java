@@ -244,7 +244,10 @@ class OtaFlowIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(Map.of("status", "INSTALLED"))
                 .exchange()
-                .expectStatus().isEqualTo(409);
+                .expectStatus().isEqualTo(409)
+                .expectBody()
+                .jsonPath("$.detail")
+                .isEqualTo("Invalid deployment transition: PENDING -> INSTALLED");
     }
 
     @Test
@@ -280,7 +283,10 @@ class OtaFlowIntegrationTest {
         restClient.get()
                 .uri("/api/v1/deployments/" + UUID.randomUUID() + "/events")
                 .exchange()
-                .expectStatus().isNotFound();
+                .expectStatus().isNotFound()
+                .expectBody()
+                .jsonPath("$.detail")
+                .isEqualTo("Deployment not found");
     }
 
     @Test

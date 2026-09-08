@@ -1,12 +1,17 @@
 package dev.heimdall.deployment;
 
 import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 import java.util.UUID;
 
+@Getter
 @Entity
 @Table(name = "deployment_event")
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class DeploymentEvent {
 
     @Id
@@ -30,9 +35,6 @@ public class DeploymentEvent {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
-    protected DeploymentEvent() {
-    }
-
     public DeploymentEvent(
             Deployment deployment,
             DeploymentStatus fromStatus,
@@ -45,29 +47,5 @@ public class DeploymentEvent {
         this.toStatus = toStatus;
         this.failureReason = failureReason;
         this.createdAt = Instant.now();
-    }
-
-    public UUID getId() {
-        return id;
-    }
-
-    public Deployment getDeployment() {
-        return deployment;
-    }
-
-    public DeploymentStatus getFromStatus() {
-        return fromStatus;
-    }
-
-    public DeploymentStatus getToStatus() {
-        return toStatus;
-    }
-
-    public String getFailureReason() {
-        return failureReason;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
     }
 }

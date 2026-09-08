@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "heimdall.rollout.evaluation-interval-ms=3600000"
+        properties = "heimdall.rollout.evaluation-interval=3600s"
 )
 @AutoConfigureRestTestClient
 @Testcontainers

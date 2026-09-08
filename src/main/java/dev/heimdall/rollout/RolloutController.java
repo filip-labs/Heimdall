@@ -1,6 +1,7 @@
 package dev.heimdall.rollout;
 
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -9,18 +10,11 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/rollouts")
+@RequiredArgsConstructor
 public class RolloutController {
 
     private final RolloutService rolloutService;
     private final RolloutControlService rolloutControlService;
-
-    public RolloutController(
-            RolloutService rolloutService,
-            RolloutControlService rolloutControlService
-    ) {
-        this.rolloutService = rolloutService;
-        this.rolloutControlService = rolloutControlService;
-    }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)

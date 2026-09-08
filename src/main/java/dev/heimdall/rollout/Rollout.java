@@ -2,13 +2,18 @@ package dev.heimdall.rollout;
 
 import dev.heimdall.release.SoftwareRelease;
 import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
+@Getter
 @Entity
 @Table(name = "rollout")
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Rollout {
 
     @Id
@@ -39,9 +44,6 @@ public class Rollout {
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
-
-    protected Rollout() {
-    }
 
     public Rollout(
             SoftwareRelease release,
@@ -116,41 +118,5 @@ public class Rollout {
     public void complete() {
         this.status = RolloutStatus.COMPLETED;
         this.updatedAt = Instant.now();
-    }
-
-    public UUID getId() {
-        return id;
-    }
-
-    public SoftwareRelease getRelease() {
-        return release;
-    }
-
-    public RolloutStatus getStatus() {
-        return status;
-    }
-
-    public BigDecimal getFailureThresholdPercent() {
-        return failureThresholdPercent;
-    }
-
-    public boolean isAutomaticRollbackEnabled() {
-        return automaticRollbackEnabled;
-    }
-
-    public int getTotalVehicles() {
-        return totalVehicles;
-    }
-
-    public int getCurrentStageIndex() {
-        return currentStageIndex;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-
-    public Instant getUpdatedAt() {
-        return updatedAt;
     }
 }

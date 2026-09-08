@@ -1,30 +1,25 @@
 package dev.heimdall.vehicle;
 
-import org.springframework.http.HttpStatus;
+import dev.heimdall.api.ConflictException;
+import dev.heimdall.api.ResourceNotFoundException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class VehicleService {
 
     private final VehicleRepository vehicleRepository;
 
-    public VehicleService(VehicleRepository vehicleRepository) {
-        this.vehicleRepository = vehicleRepository;
-    }
-
     @Transactional
     public VehicleResponse create(CreateVehicleRequest request) {
         if (vehicleRepository.existsByVin(request.vin())) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Vehicle with VIN already exists"
-            );
+            throw new ConflictException("Vehicle with VIN already exists");
         }
 
         Vehicle vehicle = new Vehicle(
@@ -68,10 +63,7 @@ public class VehicleService {
     public VehicleResponse getByVin(String vin) {
         return vehicleRepository.findByVin(vin)
                 .map(VehicleResponse::from)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Vehicle not found"
-                ));
+                .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found"));
     }
 
     @Transactional(readOnly = true)
@@ -84,9 +76,6 @@ public class VehicleService {
 
     private Vehicle getVehicle(UUID id) {
         return vehicleRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Vehicle not found"
-                ));
+                .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found"));
     }
 }

@@ -4,12 +4,17 @@ import dev.heimdall.rollout.RolloutStage;
 import dev.heimdall.release.SoftwareRelease;
 import dev.heimdall.vehicle.Vehicle;
 import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 import java.util.UUID;
 
+@Getter
 @Entity
 @Table(name = "deployment")
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Deployment {
 
     @Id
@@ -46,9 +51,6 @@ public class Deployment {
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
-
-    protected Deployment() {
-    }
 
     public Deployment(Vehicle vehicle, SoftwareRelease release) {
         this.id = UUID.randomUUID();
@@ -121,45 +123,5 @@ public class Deployment {
             case INSTALLING -> next == DeploymentStatus.INSTALLED;
             case INSTALLED, FAILED -> false;
         };
-    }
-
-    public UUID getId() {
-        return id;
-    }
-
-    public Vehicle getVehicle() {
-        return vehicle;
-    }
-
-    public SoftwareRelease getRelease() {
-        return release;
-    }
-
-    public RolloutStage getRolloutStage() {
-        return rolloutStage;
-    }
-
-    public Deployment getRollbackOfDeployment() {
-        return rollbackOfDeployment;
-    }
-
-    public String getSourceSoftwareVersion() {
-        return sourceSoftwareVersion;
-    }
-
-    public DeploymentStatus getStatus() {
-        return status;
-    }
-
-    public String getFailureReason() {
-        return failureReason;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-
-    public Instant getUpdatedAt() {
-        return updatedAt;
     }
 }

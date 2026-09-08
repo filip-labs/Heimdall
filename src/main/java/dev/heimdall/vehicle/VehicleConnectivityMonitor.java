@@ -1,33 +1,26 @@
 package dev.heimdall.vehicle;
 
-import org.springframework.beans.factory.annotation.Value;
+import dev.heimdall.config.VehicleProperties;
+import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 
 @Component
+@RequiredArgsConstructor
 public class VehicleConnectivityMonitor {
 
     private final VehicleService vehicleService;
-    private final long offlineThresholdSeconds;
-
-    public VehicleConnectivityMonitor(
-            VehicleService vehicleService,
-            @Value("${heimdall.vehicle.offline-threshold-seconds:30}")
-            long offlineThresholdSeconds
-    ) {
-        this.vehicleService = vehicleService;
-        this.offlineThresholdSeconds = offlineThresholdSeconds;
-    }
+    private final VehicleProperties properties;
 
     @Scheduled(
             fixedDelayString =
-                    "${heimdall.vehicle.offline-check-interval-ms:10000}"
+                    "${heimdall.vehicle.offline-check-interval:10s}"
     )
     public void detectOfflineVehicles() {
         Instant cutoff =
-                Instant.now().minusSeconds(offlineThresholdSeconds);
+                Instant.now().minus(properties.offlineThreshold());
 
         vehicleService.markStaleVehiclesOffline(cutoff);
     }

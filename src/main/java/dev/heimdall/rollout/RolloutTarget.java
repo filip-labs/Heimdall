@@ -2,9 +2,14 @@ package dev.heimdall.rollout;
 
 import dev.heimdall.vehicle.Vehicle;
 import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
+@Getter
 @Entity
 @Table(name = "rollout_target")
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class RolloutTarget {
 
     @EmbeddedId
@@ -23,29 +28,10 @@ public class RolloutTarget {
     @Column(name = "target_ordinal", nullable = false)
     private int targetOrdinal;
 
-    protected RolloutTarget() {
-    }
-
     public RolloutTarget(Rollout rollout, Vehicle vehicle, int targetOrdinal) {
         this.id = new RolloutTargetId(rollout.getId(), vehicle.getId());
         this.rollout = rollout;
         this.vehicle = vehicle;
         this.targetOrdinal = targetOrdinal;
-    }
-
-    public RolloutTargetId getId() {
-        return id;
-    }
-
-    public Rollout getRollout() {
-        return rollout;
-    }
-
-    public Vehicle getVehicle() {
-        return vehicle;
-    }
-
-    public int getTargetOrdinal() {
-        return targetOrdinal;
     }
 }

@@ -1,25 +1,19 @@
 package dev.heimdall.rollout;
 
-import org.springframework.http.HttpStatus;
+import dev.heimdall.api.ConflictException;
+import dev.heimdall.api.ResourceNotFoundException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class RolloutControlService {
 
     private final RolloutRepository rolloutRepository;
     private final RolloutStageRepository rolloutStageRepository;
-
-    public RolloutControlService(
-            RolloutRepository rolloutRepository,
-            RolloutStageRepository rolloutStageRepository
-    ) {
-        this.rolloutRepository = rolloutRepository;
-        this.rolloutStageRepository = rolloutStageRepository;
-    }
 
     @Transactional
     public RolloutResponse pause(UUID rolloutId) {
@@ -44,18 +38,12 @@ public class RolloutControlService {
             RolloutControlAction action
     ) {
         Rollout rollout = rolloutRepository.findByIdForUpdate(rolloutId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Rollout not found"
-                ));
+                .orElseThrow(() -> new ResourceNotFoundException("Rollout not found"));
 
         try {
             action.apply(rollout);
         } catch (IllegalStateException e) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    e.getMessage()
-            );
+            throw new ConflictException(e.getMessage());
         }
 
         return RolloutResponse.from(rollout);

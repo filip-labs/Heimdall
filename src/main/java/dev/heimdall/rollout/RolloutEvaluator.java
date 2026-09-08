@@ -1,12 +1,12 @@
 package dev.heimdall.rollout;
 
+import dev.heimdall.api.ResourceNotFoundException;
 import dev.heimdall.deployment.DeploymentRepository;
 import dev.heimdall.deployment.DeploymentStatus;
-import org.springframework.http.HttpStatus;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class RolloutEvaluator {
 
     private static final List<DeploymentStatus> TERMINAL_STATUSES =
@@ -24,20 +25,6 @@ public class RolloutEvaluator {
     private final DeploymentRepository deploymentRepository;
     private final RolloutDeploymentCoordinator deploymentCoordinator;
     private final TransactionTemplate transactionTemplate;
-
-    public RolloutEvaluator(
-            RolloutRepository rolloutRepository,
-            RolloutStageRepository rolloutStageRepository,
-            DeploymentRepository deploymentRepository,
-            RolloutDeploymentCoordinator deploymentCoordinator,
-            TransactionTemplate transactionTemplate
-    ) {
-        this.rolloutRepository = rolloutRepository;
-        this.rolloutStageRepository = rolloutStageRepository;
-        this.deploymentRepository = deploymentRepository;
-        this.deploymentCoordinator = deploymentCoordinator;
-        this.transactionTemplate = transactionTemplate;
-    }
 
     public void evaluateRunningRollouts() {
         List<UUID> rolloutIds = rolloutRepository.findAllByStatus(RolloutStatus.RUNNING)
@@ -53,10 +40,7 @@ public class RolloutEvaluator {
     @Transactional
     public void evaluateRollout(UUID rolloutId) {
         Rollout rollout = rolloutRepository.findByIdForUpdate(rolloutId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Rollout not found"
-                ));
+                .orElseThrow(() -> new ResourceNotFoundException("Rollout not found"));
 
         if (rollout.getStatus() != RolloutStatus.RUNNING) {
             return;

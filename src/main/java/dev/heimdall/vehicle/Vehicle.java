@@ -1,12 +1,17 @@
 package dev.heimdall.vehicle;
 
 import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 import java.util.UUID;
 
+@Getter
 @Entity
 @Table(name = "vehicle")
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Vehicle {
 
     @Id
@@ -30,9 +35,6 @@ public class Vehicle {
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
-
-    protected Vehicle() {
-    }
 
     public Vehicle(String vin, String softwareVersion) {
         Instant now = Instant.now();
@@ -61,33 +63,5 @@ public class Vehicle {
     public void installSoftwareVersion(String softwareVersion) {
         this.softwareVersion = softwareVersion;
         this.updatedAt = Instant.now();
-    }
-
-    public UUID getId() {
-        return id;
-    }
-
-    public String getVin() {
-        return vin;
-    }
-
-    public String getSoftwareVersion() {
-        return softwareVersion;
-    }
-
-    public ConnectivityStatus getConnectivityStatus() {
-        return connectivityStatus;
-    }
-
-    public Instant getLastSeenAt() {
-        return lastSeenAt;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-
-    public Instant getUpdatedAt() {
-        return updatedAt;
     }
 }

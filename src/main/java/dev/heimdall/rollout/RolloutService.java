@@ -1,17 +1,18 @@
 package dev.heimdall.rollout;
 
+import dev.heimdall.api.ResourceNotFoundException;
 import dev.heimdall.release.SoftwareRelease;
 import dev.heimdall.release.SoftwareReleaseRepository;
 import dev.heimdall.vehicle.Vehicle;
-import org.springframework.http.HttpStatus;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class RolloutService {
 
     private final RolloutRepository rolloutRepository;
@@ -23,33 +24,10 @@ public class RolloutService {
     private final RolloutDeploymentCoordinator deploymentCoordinator;
     private final RolloutStageResponseMapper stageResponseMapper;
 
-    public RolloutService(
-            RolloutRepository rolloutRepository,
-            RolloutStageRepository rolloutStageRepository,
-            RolloutTargetRepository rolloutTargetRepository,
-            SoftwareReleaseRepository releaseRepository,
-            RolloutTargetSelector targetSelector,
-            RolloutStagePlanner stagePlanner,
-            RolloutDeploymentCoordinator deploymentCoordinator,
-            RolloutStageResponseMapper stageResponseMapper
-    ) {
-        this.rolloutRepository = rolloutRepository;
-        this.rolloutStageRepository = rolloutStageRepository;
-        this.rolloutTargetRepository = rolloutTargetRepository;
-        this.releaseRepository = releaseRepository;
-        this.targetSelector = targetSelector;
-        this.stagePlanner = stagePlanner;
-        this.deploymentCoordinator = deploymentCoordinator;
-        this.stageResponseMapper = stageResponseMapper;
-    }
-
     @Transactional
     public RolloutResponse create(CreateRolloutRequest request) {
         SoftwareRelease release = releaseRepository.findById(request.releaseId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Software release not found"
-                ));
+                .orElseThrow(() -> new ResourceNotFoundException("Software release not found"));
 
         List<Vehicle> targetVehicles = targetSelector.selectEligibleTargets(release);
 
@@ -88,19 +66,13 @@ public class RolloutService {
     public RolloutResponse getById(UUID id) {
         return rolloutRepository.findById(id)
                 .map(RolloutResponse::from)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Rollout not found"
-                ));
+                .orElseThrow(() -> new ResourceNotFoundException("Rollout not found"));
     }
 
     @Transactional(readOnly = true)
     public List<RolloutStageResponse> getStages(UUID rolloutId) {
         if (!rolloutRepository.existsById(rolloutId)) {
-            throw new ResponseStatusException(
-                    HttpStatus.NOT_FOUND,
-                    "Rollout not found"
-            );
+            throw new ResourceNotFoundException("Rollout not found");
         }
 
         return rolloutStageRepository.findAllByRollout_IdOrderByStageIndexAsc(rolloutId)

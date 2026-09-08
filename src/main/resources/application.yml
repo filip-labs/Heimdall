@@ -26,7 +26,7 @@ management:
 
 heimdall:
   vehicle:
-    offline-threshold-seconds: 30
-    offline-check-interval-ms: 10000
+    offline-threshold: 30s
+    offline-check-interval: 10s
   rollout:
-    evaluation-interval-ms: 1000
+    evaluation-interval: 1s

@@ -3,6 +3,8 @@ package dev.heimdall.rollout;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 
@@ -16,7 +18,7 @@ public record CreateRolloutRequest(
         UUID releaseId,
 
         @NotEmpty
-        List<Integer> stages,
+        List<@NotNull @Min(1) @Max(100) Integer> stages,
 
         @NotNull
         @DecimalMin("0.0")

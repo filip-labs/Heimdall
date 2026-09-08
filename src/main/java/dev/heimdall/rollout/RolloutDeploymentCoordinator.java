@@ -1,26 +1,18 @@
 package dev.heimdall.rollout;
 
 import dev.heimdall.deployment.DeploymentService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 
 @Component
+@RequiredArgsConstructor
 public class RolloutDeploymentCoordinator {
 
     private final RolloutStageRepository rolloutStageRepository;
     private final RolloutTargetRepository rolloutTargetRepository;
     private final DeploymentService deploymentService;
-
-    public RolloutDeploymentCoordinator(
-            RolloutStageRepository rolloutStageRepository,
-            RolloutTargetRepository rolloutTargetRepository,
-            DeploymentService deploymentService
-    ) {
-        this.rolloutStageRepository = rolloutStageRepository;
-        this.rolloutTargetRepository = rolloutTargetRepository;
-        this.deploymentService = deploymentService;
-    }
 
     public void createDeploymentsForStage(
             Rollout rollout,

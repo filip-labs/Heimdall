@@ -1,14 +1,16 @@
 package dev.heimdall.deployment;
 
+import dev.heimdall.api.BadRequestException;
+import dev.heimdall.api.ConflictException;
+import dev.heimdall.api.ResourceNotFoundException;
 import dev.heimdall.release.SoftwareRelease;
 import dev.heimdall.release.SoftwareReleaseRepository;
 import dev.heimdall.rollout.RolloutStage;
 import dev.heimdall.vehicle.Vehicle;
 import dev.heimdall.vehicle.VehicleRepository;
-import org.springframework.http.HttpStatus;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.EnumSet;
 import java.util.List;
@@ -17,6 +19,7 @@ import java.util.Set;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class DeploymentService {
 
     private final DeploymentRepository deploymentRepository;
@@ -24,47 +27,23 @@ public class DeploymentService {
     private final VehicleRepository vehicleRepository;
     private final SoftwareReleaseRepository releaseRepository;
 
-    public DeploymentService(
-            DeploymentRepository deploymentRepository,
-            DeploymentEventRepository deploymentEventRepository,
-            VehicleRepository vehicleRepository,
-            SoftwareReleaseRepository releaseRepository
-    ) {
-        this.deploymentRepository = deploymentRepository;
-        this.deploymentEventRepository = deploymentEventRepository;
-        this.vehicleRepository = vehicleRepository;
-        this.releaseRepository = releaseRepository;
-    }
-
     @Transactional
     public DeploymentResponse create(CreateDeploymentRequest request) {
         Vehicle vehicle = vehicleRepository.findById(request.vehicleId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Vehicle not found"
-                ));
+                .orElseThrow(() -> new ResourceNotFoundException("Vehicle not found"));
 
         SoftwareRelease release = releaseRepository.findById(request.releaseId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Software release not found"
-                ));
+                .orElseThrow(() -> new ResourceNotFoundException("Software release not found"));
 
         if (vehicle.getSoftwareVersion().equals(release.getVersion())) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Vehicle is already running this software version"
-            );
+            throw new ConflictException("Vehicle is already running this software version");
         }
 
         if (deploymentRepository.existsByVehicle_IdAndStatusIn(
                 vehicle.getId(),
                 ACTIVE_STATUSES
         )) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Vehicle already has an active deployment"
-            );
+            throw new ConflictException("Vehicle already has an active deployment");
         }
 
         return DeploymentResponse.from(createDeployment(vehicle, release, null, null));
@@ -76,20 +55,14 @@ public class DeploymentService {
             RolloutStage rolloutStage
     ) {
         if (vehicle.getSoftwareVersion().equals(release.getVersion())) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Vehicle is already running this software version"
-            );
+            throw new ConflictException("Vehicle is already running this software version");
         }
 
         if (deploymentRepository.existsByVehicle_IdAndStatusIn(
                 vehicle.getId(),
                 ACTIVE_STATUSES
         )) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Vehicle already has an active deployment"
-            );
+            throw new ConflictException("Vehicle already has an active deployment");
         }
 
         return createDeployment(vehicle, release, rolloutStage, null);
@@ -127,10 +100,7 @@ public class DeploymentService {
     @Transactional(readOnly = true)
     public List<DeploymentEventResponse> getEvents(UUID deploymentId) {
         if (!deploymentRepository.existsById(deploymentId)) {
-            throw new ResponseStatusException(
-                    HttpStatus.NOT_FOUND,
-                    "Deployment not found"
-            );
+            throw new ResourceNotFoundException("Deployment not found");
         }
 
         return deploymentEventRepository
@@ -146,10 +116,7 @@ public class DeploymentService {
             UpdateDeploymentStatusRequest request
     ) {
         Deployment deployment = deploymentRepository.findById(deploymentId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Deployment not found"
-                ));
+                .orElseThrow(() -> new ResourceNotFoundException("Deployment not found"));
 
         if (deployment.getStatus() == request.status()) {
             return DeploymentResponse.from(deployment);
@@ -163,15 +130,9 @@ public class DeploymentService {
                     request.failureReason()
             );
         } catch (IllegalStateException e) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    e.getMessage()
-            );
+            throw new ConflictException(e.getMessage());
         } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    e.getMessage()
-            );
+            throw new BadRequestException(e.getMessage());
         }
 
         deploymentEventRepository.save(new DeploymentEvent(
@@ -194,10 +155,7 @@ public class DeploymentService {
     public DeploymentResponse getById(UUID id) {
         return deploymentRepository.findById(id)
                 .map(DeploymentResponse::from)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Deployment not found"
-                ));
+                .orElseThrow(() -> new ResourceNotFoundException("Deployment not found"));
     }
 
     @Transactional(readOnly = true)
@@ -219,10 +177,7 @@ public class DeploymentService {
     @Transactional(readOnly = true)
     public Optional<DeploymentResponse> getActiveForVehicle(UUID vehicleId) {
         if (!vehicleRepository.existsById(vehicleId)) {
-            throw new ResponseStatusException(
-                    HttpStatus.NOT_FOUND,
-                    "Vehicle not found"
-            );
+            throw new ResourceNotFoundException("Vehicle not found");
         }
 
         return deploymentRepository

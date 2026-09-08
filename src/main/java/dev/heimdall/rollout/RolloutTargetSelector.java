@@ -1,41 +1,31 @@
 package dev.heimdall.rollout;
 
+import dev.heimdall.api.ConflictException;
 import dev.heimdall.deployment.DeploymentRepository;
 import dev.heimdall.deployment.DeploymentService;
 import dev.heimdall.release.SoftwareRelease;
 import dev.heimdall.vehicle.Vehicle;
 import dev.heimdall.vehicle.VehicleRepository;
-import org.springframework.http.HttpStatus;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 @Component
+@RequiredArgsConstructor
 public class RolloutTargetSelector {
 
     private final VehicleRepository vehicleRepository;
     private final DeploymentRepository deploymentRepository;
-
-    public RolloutTargetSelector(
-            VehicleRepository vehicleRepository,
-            DeploymentRepository deploymentRepository
-    ) {
-        this.vehicleRepository = vehicleRepository;
-        this.deploymentRepository = deploymentRepository;
-    }
 
     public List<Vehicle> selectEligibleTargets(SoftwareRelease release) {
         List<Vehicle> targetVehicles = vehicleRepository
                 .findAllBySoftwareVersionNotOrderByVinAsc(release.getVersion());
 
         if (targetVehicles.isEmpty()) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "No eligible vehicles for rollout"
-            );
+            throw new ConflictException("No eligible vehicles for rollout");
         }
 
         List<UUID> targetVehicleIds = targetVehicles.stream()
@@ -45,8 +35,7 @@ public class RolloutTargetSelector {
                 targetVehicleIds,
                 DeploymentService.ACTIVE_STATUSES
         )) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
+            throw new ConflictException(
                     "At least one target vehicle already has an active deployment"
             );
         }

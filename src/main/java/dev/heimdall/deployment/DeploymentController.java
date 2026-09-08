@@ -1,6 +1,7 @@
 package dev.heimdall.deployment;
 
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -9,18 +10,11 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/deployments")
+@RequiredArgsConstructor
 public class DeploymentController {
 
     private final DeploymentService deploymentService;
     private final DeploymentRollbackService deploymentRollbackService;
-
-    public DeploymentController(
-            DeploymentService deploymentService,
-            DeploymentRollbackService deploymentRollbackService
-    ) {
-        this.deploymentService = deploymentService;
-        this.deploymentRollbackService = deploymentRollbackService;
-    }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
