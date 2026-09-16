@@ -13,6 +13,8 @@ public interface VehicleRepository extends JpaRepository<Vehicle, UUID> {
 
     boolean existsByVin(String vin);
 
+    long countByConnectivityStatus(ConnectivityStatus connectivityStatus);
+
     List<Vehicle> findAllBySoftwareVersionNotOrderByVinAsc(
             String softwareVersion
     );
