@@ -13,6 +13,8 @@ public interface RolloutRepository extends JpaRepository<Rollout, UUID> {
 
     List<Rollout> findAllByStatus(RolloutStatus status);
 
+    long countByStatus(RolloutStatus status);
+
     @Query("""
             select r.id
             from Rollout r
