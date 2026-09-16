@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: heimdall
       POSTGRES_PASSWORD: heimdall
     ports:
-        - "5433:5432"
+      - "5433:5432"
     volumes:
       - heimdall_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -15,6 +15,18 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    container_name: heimdall-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
 
 volumes:
   heimdall_postgres_data:
