@@ -34,6 +34,10 @@ public interface DeploymentRepository
             Collection<DeploymentStatus> statuses
     );
 
+    long countByStatus(DeploymentStatus status);
+
+    long countByStatusIn(Collection<DeploymentStatus> statuses);
+
     long countByRolloutStage_Id(UUID rolloutStageId);
 
     long countByRolloutStage_IdAndStatus(
