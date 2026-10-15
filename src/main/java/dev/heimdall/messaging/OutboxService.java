@@ -1,6 +1,5 @@
 package dev.heimdall.messaging;
 
-import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -35,16 +34,12 @@ public class OutboxService {
                 objectMapper.valueToTree(payload)
         );
 
-        try {
-            outboxEventRepository.save(new OutboxEvent(
-                    envelope,
-                    topic,
-                    aggregateId.toString(),
-                    objectMapper.writeValueAsString(envelope)
-            ));
-        } catch (JacksonException exception) {
-            throw new IllegalStateException("Could not serialize domain event", exception);
-        }
+        outboxEventRepository.save(new OutboxEvent(
+                envelope,
+                topic,
+                aggregateId.toString(),
+                objectMapper.valueToTree(envelope)
+        ));
 
         return envelope.eventId();
     }

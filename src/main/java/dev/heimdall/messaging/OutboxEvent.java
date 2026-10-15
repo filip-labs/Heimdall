@@ -9,6 +9,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
+import tools.jackson.databind.JsonNode;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -43,7 +44,7 @@ public class OutboxEvent {
 
     @Column(nullable = false, columnDefinition = "jsonb")
     @JdbcTypeCode(SqlTypes.JSON)
-    private String payload;
+    private JsonNode payload;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -64,7 +65,7 @@ public class OutboxEvent {
             DomainEventEnvelope envelope,
             String kafkaTopic,
             String kafkaKey,
-            String serializedEnvelope
+            JsonNode serializedEnvelope
     ) {
         this.id = envelope.eventId();
         this.aggregateType = envelope.aggregateType();

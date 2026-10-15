@@ -190,7 +190,10 @@ class M9KafkaIntegrationTest {
         assertEquals(4, outboxRepository.countByEventType("deployment.status.changed"));
         List<OutboxEvent> terminal = outboxRepository.findAll().stream()
                 .filter(event -> event.getEventType().equals("deployment.status.changed"))
-                .filter(event -> event.getPayload().contains("\"toStatus\":\"INSTALLED\""))
+                .filter(event -> "INSTALLED".equals(event.getPayload()
+                        .path("payload")
+                        .path("toStatus")
+                        .asText()))
                 .toList();
         assertEquals(1, terminal.size());
     }

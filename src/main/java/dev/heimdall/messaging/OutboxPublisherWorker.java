@@ -28,7 +28,7 @@ public class OutboxPublisherWorker {
             kafkaTemplate.send(
                     event.getKafkaTopic(),
                     event.getKafkaKey(),
-                    event.getPayload()
+                    event.getPayload().toString()
             ).get(10, TimeUnit.SECONDS);
             event.markPublished(Instant.now());
             outboxMetrics.published(event.getAggregateType());
