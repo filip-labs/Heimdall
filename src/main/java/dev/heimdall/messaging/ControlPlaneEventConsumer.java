@@ -60,7 +60,7 @@ public class ControlPlaneEventConsumer {
             }
 
             rolloutEvaluator.evaluateRollout(UUID.fromString(rolloutId.asText()));
-        } catch (RuntimeException | java.io.IOException exception) {
+        } catch (RuntimeException exception) {
             processingFailures.increment();
             throw new IllegalArgumentException("Could not process deployment event", exception);
         }
@@ -85,7 +85,7 @@ public class ControlPlaneEventConsumer {
             automaticRollbackCoordinator.processRollout(
                     UUID.fromString(payload.path("rolloutId").asText())
             );
-        } catch (RuntimeException | java.io.IOException exception) {
+        } catch (RuntimeException exception) {
             processingFailures.increment();
             throw new IllegalArgumentException("Could not process rollout event", exception);
         }
