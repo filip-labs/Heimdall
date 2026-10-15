@@ -206,13 +206,14 @@ The Postman collection in `postman/Heimdall.postman_collection.json` covers the 
 - Micrometer
 - Prometheus
 - Grafana
+- Apache Kafka
 - Postman
 
-Kafka and Redis are roadmap items, not implemented features.
+Redis is a roadmap item, not an implemented feature.
 
 ## Running Locally
 
-Start PostgreSQL, Prometheus, and Grafana:
+Start PostgreSQL, Kafka, Prometheus, and Grafana:
 
 ```bash
 docker compose up -d
@@ -270,6 +271,51 @@ the Prometheus endpoint and dashboard. Stop the local services with:
 
 ```bash
 docker compose down
+```
+
+## Event-Driven Control Plane
+
+Kafka is Heimdall's internal responsive event backbone; PostgreSQL remains the
+durable source of truth. Domain changes and event intent are written atomically
+to a transactional outbox. A bounded publisher delivers JSON envelopes to
+Kafka at least once, and idempotent consumers re-read PostgreSQL before they
+trigger rollout evaluation or automatic rollback processing.
+
+The Go simulator and vehicles continue to use HTTP only. Heartbeats are not
+published because they are high-frequency and currently have no meaningful
+asynchronous consumer.
+
+The local KRaft broker listens on `localhost:9092`. Topics are created
+automatically with three partitions and replication factor one:
+
+- `heimdall.vehicle-events`
+- `heimdall.deployment-events`
+- `heimdall.rollout-events`
+
+The normal event-driven path is backed by a slower 30-second reconciliation
+scheduler, so a broker or consumer outage cannot permanently stall a rollout.
+See [Event-Driven Control Plane](docs/event-driven-architecture.md) for event
+contracts, ordering, delivery guarantees, consumers, and failure trade-offs.
+
+Inspect the running broker without installing a local Kafka CLI:
+
+```bash
+# Topics
+docker compose exec kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 --list
+
+# Deployment events
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic heimdall.deployment-events --from-beginning
+
+# Consumer groups and offsets
+docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server localhost:9092 --all-groups --describe
+
+# Pending/retried outbox rows
+docker compose exec postgres psql -U heimdall -d heimdall -c \
+  "SELECT event_type, attempt_count, created_at, last_error FROM event_outbox WHERE published_at IS NULL ORDER BY created_at;"
 ```
 
 ## Tests
