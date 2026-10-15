@@ -3,6 +3,7 @@ package dev.heimdall.deployment;
 import dev.heimdall.api.BadRequestException;
 import dev.heimdall.api.ConflictException;
 import dev.heimdall.api.ResourceNotFoundException;
+import dev.heimdall.messaging.DomainEventRecorder;
 import dev.heimdall.release.SoftwareRelease;
 import dev.heimdall.release.SoftwareReleaseRepository;
 import dev.heimdall.rollout.RolloutStage;
@@ -27,6 +28,7 @@ public class DeploymentService {
     private final VehicleRepository vehicleRepository;
     private final SoftwareReleaseRepository releaseRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final DomainEventRecorder domainEventRecorder;
 
     @Transactional
     public DeploymentResponse create(CreateDeploymentRequest request) {
@@ -95,6 +97,8 @@ public class DeploymentService {
                 null
         ));
 
+        domainEventRecorder.deploymentCreated(savedDeployment);
+
         return savedDeployment;
     }
 
@@ -142,6 +146,8 @@ public class DeploymentService {
                 deployment.getStatus(),
                 deployment.getFailureReason()
         ));
+
+        domainEventRecorder.deploymentStatusChanged(deployment, previousStatus);
 
         if (request.status() == DeploymentStatus.INSTALLED) {
             deployment.getVehicle().installSoftwareVersion(

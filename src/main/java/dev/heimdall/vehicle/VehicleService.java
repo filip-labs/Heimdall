@@ -2,6 +2,7 @@ package dev.heimdall.vehicle;
 
 import dev.heimdall.api.ConflictException;
 import dev.heimdall.api.ResourceNotFoundException;
+import dev.heimdall.messaging.DomainEventRecorder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,6 +16,7 @@ import java.util.UUID;
 public class VehicleService {
 
     private final VehicleRepository vehicleRepository;
+    private final DomainEventRecorder eventRecorder;
 
     @Transactional
     public VehicleResponse create(CreateVehicleRequest request) {
@@ -27,9 +29,9 @@ public class VehicleService {
                 request.softwareVersion()
         );
 
-        return VehicleResponse.from(
-                vehicleRepository.save(vehicle)
-        );
+        Vehicle savedVehicle = vehicleRepository.save(vehicle);
+        eventRecorder.vehicleRegistered(savedVehicle);
+        return VehicleResponse.from(savedVehicle);
     }
 
     @Transactional

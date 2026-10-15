@@ -3,6 +3,7 @@ package dev.heimdall.rollout;
 import dev.heimdall.api.ResourceNotFoundException;
 import dev.heimdall.deployment.DeploymentRepository;
 import dev.heimdall.deployment.DeploymentStatus;
+import dev.heimdall.messaging.DomainEventRecorder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +24,7 @@ public class RolloutEvaluationWorker {
     private final RolloutStageRepository rolloutStageRepository;
     private final DeploymentRepository deploymentRepository;
     private final RolloutDeploymentCoordinator deploymentCoordinator;
+    private final DomainEventRecorder eventRecorder;
 
     @Transactional
     public void evaluateRollout(UUID rolloutId) {
@@ -47,6 +49,8 @@ public class RolloutEvaluationWorker {
         if (stageHealth.failureRate().compareTo(rollout.getFailureThresholdPercent()) > 0) {
             stage.fail();
             rollout.pause();
+            eventRecorder.rolloutStageFailed(rollout, stage);
+            eventRecorder.rolloutPaused(rollout, "HEALTH_GATE");
             return;
         }
 
@@ -93,12 +97,14 @@ public class RolloutEvaluationWorker {
             RolloutStage stage
     ) {
         stage.complete();
+        eventRecorder.rolloutStageCompleted(rollout, stage);
 
         List<RolloutStage> stages = rolloutStageRepository
                 .findAllByRollout_IdOrderByStageIndexAsc(rollout.getId());
         int nextStageIndex = rollout.getCurrentStageIndex() + 1;
         if (nextStageIndex >= stages.size()) {
             rollout.complete();
+            eventRecorder.rolloutCompleted(rollout);
             return;
         }
 
@@ -106,6 +112,7 @@ public class RolloutEvaluationWorker {
         nextStage.start();
         rollout.advanceToStage(nextStageIndex);
         deploymentCoordinator.createDeploymentsForStage(rollout, nextStage);
+        eventRecorder.rolloutStageStarted(rollout, nextStage);
     }
 
     private record StageHealth(
