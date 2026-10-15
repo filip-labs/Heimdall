@@ -27,7 +27,7 @@ public class AutomaticRollbackCoordinator {
         }
     }
 
-    private void processRollout(UUID rolloutId) {
+    public void processRollout(UUID rolloutId) {
         List<UUID> sourceDeploymentIds = automaticRollbackWorker
                 .findEligibleSourceDeployments(rolloutId);
 
