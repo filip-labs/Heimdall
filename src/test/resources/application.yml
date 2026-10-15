@@ -1,0 +1,3 @@
+heimdall:
+  kafka:
+    enabled: false
