@@ -70,14 +70,20 @@ class DeploymentMetricsIntegrationTest {
         transition(successful, DeploymentStatus.DOWNLOADING, null);
         transition(successful, DeploymentStatus.DOWNLOADED, null);
         transition(successful, DeploymentStatus.INSTALLING, null);
+
+        assertCounter("heimdall.ota.success", 0.0);
+        assertCounter("heimdall.ota.failure", 0.0);
+        assertEquals(0L, timer("success").count());
+        assertEquals(0L, timer("failure").count());
+
         transition(successful, DeploymentStatus.INSTALLED, null);
         transition(successful, DeploymentStatus.INSTALLED, null);
 
         transition(failed, DeploymentStatus.FAILED, "simulated failure");
         transition(failed, DeploymentStatus.FAILED, "simulated failure");
 
-        assertCounter("success", 1.0);
-        assertCounter("failure", 1.0);
+        assertCounter("heimdall.ota.success", 1.0);
+        assertCounter("heimdall.ota.failure", 1.0);
         assertTimer("success");
         assertTimer("failure");
     }
@@ -105,21 +111,24 @@ class DeploymentMetricsIntegrationTest {
         );
     }
 
-    private void assertCounter(String outcome, double expected) {
+    private void assertCounter(String name, double expected) {
         assertEquals(
                 expected,
-                meterRegistry.get("heimdall.ota.outcomes")
-                        .tag("outcome", outcome)
+                meterRegistry.get(name)
                         .counter()
                         .count()
         );
     }
 
     private void assertTimer(String outcome) {
-        Timer timer = meterRegistry.get("heimdall.ota.duration")
-                .tag("outcome", outcome)
-                .timer();
+        Timer timer = timer(outcome);
         assertEquals(1L, timer.count());
         assertTrue(timer.totalTime(TimeUnit.NANOSECONDS) >= 0);
+    }
+
+    private Timer timer(String outcome) {
+        return meterRegistry.get("heimdall.ota.duration")
+                .tag("outcome", outcome)
+                .timer();
     }
 }

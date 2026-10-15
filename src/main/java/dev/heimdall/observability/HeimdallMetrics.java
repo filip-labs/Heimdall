@@ -1,6 +1,7 @@
 package dev.heimdall.observability;
 
 import dev.heimdall.deployment.DeploymentRepository;
+import dev.heimdall.deployment.DeploymentService;
 import dev.heimdall.deployment.DeploymentStatus;
 import dev.heimdall.rollout.RolloutRepository;
 import dev.heimdall.rollout.RolloutStatus;
@@ -10,18 +11,8 @@ import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
 
-import java.util.EnumSet;
-
 @Component
 public class HeimdallMetrics {
-
-    private static final EnumSet<DeploymentStatus> ACTIVE_DEPLOYMENT_STATUSES =
-            EnumSet.of(
-                    DeploymentStatus.PENDING,
-                    DeploymentStatus.DOWNLOADING,
-                    DeploymentStatus.DOWNLOADED,
-                    DeploymentStatus.INSTALLING
-            );
 
     public HeimdallMetrics(
             MeterRegistry meterRegistry,
@@ -64,7 +55,9 @@ public class HeimdallMetrics {
         Gauge.builder(
                         "heimdall.deployments",
                         repository,
-                        value -> value.countByStatusIn(ACTIVE_DEPLOYMENT_STATUSES)
+                        value -> value.countByStatusIn(
+                                DeploymentService.activeStatuses()
+                        )
                 )
                 .description("Current number of deployments by operational status")
                 .tag("status", "active")

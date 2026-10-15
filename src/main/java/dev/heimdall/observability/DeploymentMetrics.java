@@ -10,55 +10,49 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.time.Duration;
-import java.util.EnumMap;
-import java.util.Map;
-
 @Component
 public class DeploymentMetrics {
 
-    private final Map<DeploymentStatus, Counter> outcomeCounters;
-    private final Map<DeploymentStatus, Timer> durationTimers;
+    private final Counter successCounter;
+    private final Counter failureCounter;
+    private final Timer successDuration;
+    private final Timer failureDuration;
 
     public DeploymentMetrics(MeterRegistry meterRegistry) {
-        this.outcomeCounters = new EnumMap<>(DeploymentStatus.class);
-        this.durationTimers = new EnumMap<>(DeploymentStatus.class);
-
-        registerOutcome(meterRegistry, DeploymentStatus.INSTALLED, "success");
-        registerOutcome(meterRegistry, DeploymentStatus.FAILED, "failure");
+        this.successCounter = Counter.builder("heimdall.ota.success")
+                .description("Committed successful OTA terminal transitions")
+                .register(meterRegistry);
+        this.failureCounter = Counter.builder("heimdall.ota.failure")
+                .description("Committed failed OTA terminal transitions")
+                .register(meterRegistry);
+        this.successDuration = durationTimer(meterRegistry, "success");
+        this.failureDuration = durationTimer(meterRegistry, "failure");
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void record(DeploymentTerminalTransition transition) {
-        Counter counter = outcomeCounters.get(transition.status());
-        Timer timer = durationTimers.get(transition.status());
+        Duration duration = nonNegative(transition.duration());
 
-        if (counter == null || timer == null) {
-            return;
+        switch (transition.status()) {
+            case INSTALLED -> {
+                successCounter.increment();
+                successDuration.record(duration);
+            }
+            case FAILED -> {
+                failureCounter.increment();
+                failureDuration.record(duration);
+            }
+            default -> {
+                // Only terminal transitions are instrumented.
+            }
         }
-
-        counter.increment();
-        timer.record(nonNegative(transition.duration()));
     }
 
-    private void registerOutcome(
-            MeterRegistry meterRegistry,
-            DeploymentStatus status,
-            String outcome
-    ) {
-        outcomeCounters.put(
-                status,
-                Counter.builder("heimdall.ota.outcomes")
-                        .description("Committed OTA terminal outcomes")
-                        .tag("outcome", outcome)
-                        .register(meterRegistry)
-        );
-        durationTimers.put(
-                status,
-                Timer.builder("heimdall.ota.duration")
-                        .description("Time from deployment creation to terminal OTA outcome")
-                        .tag("outcome", outcome)
-                        .register(meterRegistry)
-        );
+    private Timer durationTimer(MeterRegistry meterRegistry, String outcome) {
+        return Timer.builder("heimdall.ota.duration")
+                .description("Time from deployment creation to terminal OTA outcome")
+                .tag("outcome", outcome)
+                .register(meterRegistry);
     }
 
     private Duration nonNegative(Duration duration) {

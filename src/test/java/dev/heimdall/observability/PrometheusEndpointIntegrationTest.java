@@ -34,7 +34,13 @@ class PrometheusEndpointIntegrationTest {
                 .expectBody(String.class)
                 .value(body -> {
                     if (!body.contains("# HELP") ||
-                            !body.contains("jvm_memory_used_bytes")) {
+                            !body.contains("jvm_memory_used_bytes") ||
+                            !body.contains("heimdall_vehicles") ||
+                            !body.contains("heimdall_deployments") ||
+                            !body.contains("heimdall_rollouts") ||
+                            !body.contains("heimdall_ota_success_total") ||
+                            !body.contains("heimdall_ota_failure_total") ||
+                            !body.contains("heimdall_ota_duration_seconds_count")) {
                         throw new AssertionError(
                                 "Prometheus endpoint did not expose expected metrics"
                         );
