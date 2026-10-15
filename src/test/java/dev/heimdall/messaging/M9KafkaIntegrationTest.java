@@ -1,6 +1,6 @@
 package dev.heimdall.messaging;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import dev.heimdall.deployment.CreateDeploymentRequest;
 import dev.heimdall.deployment.DeploymentResponse;
 import dev.heimdall.deployment.DeploymentService;

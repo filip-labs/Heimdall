@@ -1,7 +1,7 @@
 package dev.heimdall.messaging;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -42,7 +42,7 @@ public class OutboxService {
                     aggregateId.toString(),
                     objectMapper.writeValueAsString(envelope)
             ));
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new IllegalStateException("Could not serialize domain event", exception);
         }
 

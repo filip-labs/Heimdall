@@ -1,7 +1,7 @@
 package dev.heimdall.messaging;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import dev.heimdall.rollout.AutomaticRollbackCoordinator;
 import dev.heimdall.rollout.RolloutEvaluator;
 import io.micrometer.core.instrument.Counter;
