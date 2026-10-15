@@ -203,13 +203,16 @@ The Postman collection in `postman/Heimdall.postman_collection.json` covers the 
 - Testcontainers
 - Go
 - Docker Compose
+- Micrometer
+- Prometheus
+- Grafana
 - Postman
 
-Kafka, Prometheus, Grafana, Redis, and rollback orchestration are roadmap items, not implemented features.
+Kafka and Redis are roadmap items, not implemented features.
 
 ## Running Locally
 
-Start PostgreSQL:
+Start PostgreSQL, Prometheus, and Grafana:
 
 ```bash
 docker compose up -d
@@ -237,6 +240,38 @@ cd simulator
 FLEET_SIZE=100 go run .
 ```
 
+## Observability
+
+The control plane exposes health, application information, and Prometheus
+metrics through narrowly configured Actuator endpoints:
+
+```text
+http://localhost:8080/actuator/health
+http://localhost:8080/actuator/info
+http://localhost:8080/actuator/prometheus
+```
+
+Prometheus scrapes the host control plane every five seconds. Its local UI is
+available at `http://localhost:9090`; the `heimdall` target should become `UP`
+after the Spring Boot application starts.
+
+Grafana is provisioned without manual setup at `http://localhost:3000`. Open
+the `Heimdall / Heimdall Overview` dashboard to inspect:
+
+- online and offline vehicles
+- active and failed deployments
+- running and paused rollouts
+- committed OTA success/failure rates
+- average time from deployment creation to its terminal outcome
+
+The custom metrics use bounded `status` and `outcome` labels only. Generate
+representative activity through the REST API or fleet simulator, then inspect
+the Prometheus endpoint and dashboard. Stop the local services with:
+
+```bash
+docker compose down
+```
+
 ## Tests
 
 Run the Java tests:
@@ -258,6 +293,9 @@ go test -race ./...
 ```text
 .
 ├── compose.yaml
+├── observability/
+│   ├── grafana/
+│   └── prometheus/
 ├── postman/
 ├── simulator/
 ├── src/main/java/dev/heimdall/
@@ -287,6 +325,8 @@ go test -race ./...
 - Stage health is calculated against the current stage's incremental cohort.
 - Artifact integrity is verified before install.
 - Simulator retries are limited to transient request errors and retryable HTTP statuses.
+- Fleet and control-plane gauges read current PostgreSQL state at scrape time.
+- OTA outcome and duration metrics are recorded only after a terminal status transaction commits.
 
 ## Project Resources
 

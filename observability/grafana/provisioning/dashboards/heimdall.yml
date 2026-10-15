@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: Heimdall
+    orgId: 1
+    folder: Heimdall
+    type: file
+    disableDeletion: true
+    editable: false
+    options:
+      path: /var/lib/grafana/dashboards

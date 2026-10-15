@@ -9,6 +9,7 @@ import dev.heimdall.rollout.RolloutStage;
 import dev.heimdall.vehicle.Vehicle;
 import dev.heimdall.vehicle.VehicleRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +26,7 @@ public class DeploymentService {
     private final DeploymentEventRepository deploymentEventRepository;
     private final VehicleRepository vehicleRepository;
     private final SoftwareReleaseRepository releaseRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public DeploymentResponse create(CreateDeploymentRequest request) {
@@ -114,7 +116,7 @@ public class DeploymentService {
             UUID deploymentId,
             UpdateDeploymentStatusRequest request
     ) {
-        Deployment deployment = deploymentRepository.findById(deploymentId)
+        Deployment deployment = deploymentRepository.findByIdForUpdate(deploymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Deployment not found"));
 
         if (deployment.getStatus() == request.status()) {
@@ -144,6 +146,13 @@ public class DeploymentService {
         if (request.status() == DeploymentStatus.INSTALLED) {
             deployment.getVehicle().installSoftwareVersion(
                     deployment.getRelease().getVersion()
+            );
+        }
+
+        if (request.status() == DeploymentStatus.INSTALLED ||
+                request.status() == DeploymentStatus.FAILED) {
+            eventPublisher.publishEvent(
+                    DeploymentTerminalTransition.from(deployment)
             );
         }
 
