@@ -37,7 +37,7 @@ class HeimdallApplicationTests {
     void shouldBindTypedDurationConfigurationProperties() {
         assertEquals(Duration.ofSeconds(30), vehicleProperties.offlineThreshold());
         assertEquals(Duration.ofSeconds(10), vehicleProperties.offlineCheckInterval());
-        assertEquals(Duration.ofSeconds(1), rolloutProperties.evaluationInterval());
+        assertEquals(Duration.ofSeconds(30), rolloutProperties.evaluationInterval());
     }
 
 }

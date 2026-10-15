@@ -1,6 +1,7 @@
 package dev.heimdall.rollout;
 
 import dev.heimdall.api.ResourceNotFoundException;
+import dev.heimdall.messaging.DomainEventRecorder;
 import dev.heimdall.release.SoftwareRelease;
 import dev.heimdall.release.SoftwareReleaseRepository;
 import dev.heimdall.vehicle.Vehicle;
@@ -23,6 +24,7 @@ public class RolloutService {
     private final RolloutStagePlanner stagePlanner;
     private final RolloutDeploymentCoordinator deploymentCoordinator;
     private final RolloutStageResponseMapper stageResponseMapper;
+    private final DomainEventRecorder eventRecorder;
 
     @Transactional
     public RolloutResponse create(CreateRolloutRequest request) {
@@ -50,6 +52,9 @@ public class RolloutService {
         rolloutStageRepository.saveAll(stages);
 
         deploymentCoordinator.createDeploymentsForStage(rollout, stages.getFirst());
+
+        eventRecorder.rolloutStarted(rollout);
+        eventRecorder.rolloutStageStarted(rollout, stages.getFirst());
 
         return RolloutResponse.from(rollout);
     }

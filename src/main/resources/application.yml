@@ -18,6 +18,19 @@ spring:
   flyway:
     enabled: true
 
+  kafka:
+    bootstrap-servers: localhost:9092
+    admin:
+      fail-fast: false
+    producer:
+      acks: all
+      retries: 10
+      properties:
+        enable.idempotence: true
+    consumer:
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+
 management:
   endpoints:
     web:
@@ -29,4 +42,8 @@ heimdall:
     offline-threshold: 30s
     offline-check-interval: 10s
   rollout:
-    evaluation-interval: 1s
+    evaluation-interval: 30s
+  kafka:
+    enabled: true
+    outbox-publish-interval: 1s
+    outbox-batch-size: 50
