@@ -87,3 +87,7 @@ npm --prefix load-tests test
 
 See [Scalability and load testing](../docs/scalability-and-load-testing.md) for
 measurement queries, resource monitoring, cleanup, and interpretation.
+For official M10B measurements, follow the
+[local baseline runbook](../docs/performance/m10b-local-runbook.md) and use the
+[evidence template](../docs/performance/baseline-template.md). Raw files under
+`load-tests/results/` are intentionally ignored by Git.

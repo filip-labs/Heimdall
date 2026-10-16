@@ -13,6 +13,13 @@ M10A commit, JVM version, container image versions, host CPU/memory, k6 host,
 profile, durations, and all environment overrides in issue #36. Results without
 that identity are not comparable.
 
+The authoritative M10B executable baseline is
+`6699f04d6ea7d933cb4c161fd62b4e2745cd8caf`. Follow the
+[M10B local baseline runbook](performance/m10b-local-runbook.md) and record each
+run with the [baseline evidence template](performance/baseline-template.md).
+Official results come from the developer's local machine and are not inferred
+from CI or cloud smoke tests.
+
 ## Workloads
 
 The scripts and configuration are documented in
