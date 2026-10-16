@@ -21,9 +21,7 @@ func bootstrapFleet(
 	for index := 1; index <= config.FleetSize; index++ {
 		index := index
 
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 
 			vin, err := generateVIN(index)
 			if err != nil {
@@ -54,7 +52,7 @@ func bootstrapFleet(
 			}
 
 			agents[index-1] = agent
-		}()
+		})
 	}
 
 	wg.Wait()

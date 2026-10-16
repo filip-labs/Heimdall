@@ -227,9 +227,8 @@ func isRetryableArtifactError(err error) bool {
 }
 
 func isRetryableRequestError(err error) bool {
-	var netErr net.Error
 
-	if errors.As(err, &netErr) {
+	if _, ok := errors.AsType[net.Error](err); ok {
 		return true
 	}
 

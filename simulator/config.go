@@ -83,7 +83,7 @@ func loadFleetConfigFromEnv() (FleetConfig, error) {
 func parseSimulatedFailureVINs(value string) (map[string]struct{}, error) {
 	configuredVINs := make(map[string]struct{})
 
-	for _, entry := range strings.Split(value, ",") {
+	for entry := range strings.SplitSeq(value, ",") {
 		vin := strings.TrimSpace(entry)
 		if vin == "" {
 			continue

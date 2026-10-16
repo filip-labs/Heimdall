@@ -110,7 +110,6 @@ func TestParseSimulatedFailureVINs(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -689,7 +688,7 @@ func TestProcessDeploymentDoesNotReprocessTerminalDeployments(t *testing.T) {
 	)
 
 	for _, status := range []string{"FAILED", "INSTALLED"} {
-		for index := 0; index < 2; index++ {
+		for range 2 {
 			err := agent.processDeployment(context.Background(), Deployment{
 				ID:                    "deployment-1",
 				SourceSoftwareVersion: "2.0.0",
