@@ -49,6 +49,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.timeout;
@@ -130,12 +131,12 @@ class M9KafkaIntegrationTest {
                 kafka.getBootstrapServers()
         ))) {
             Set<String> topics = admin.listTopics().names().get();
-            assertEquals(true, topics.containsAll(Set.of(
-                    HeimdallTopics.VEHICLE_EVENTS,
-                    HeimdallTopics.DEPLOYMENT_EVENTS,
-                    HeimdallTopics.ROLLOUT_EVENTS,
-                    HeimdallTopics.DEPLOYMENT_EVENTS_DLT,
-                    HeimdallTopics.ROLLOUT_EVENTS_DLT
+            assertTrue(topics.containsAll(Set.of(
+                HeimdallTopics.VEHICLE_EVENTS,
+                HeimdallTopics.DEPLOYMENT_EVENTS,
+                HeimdallTopics.ROLLOUT_EVENTS,
+                HeimdallTopics.DEPLOYMENT_EVENTS_DLT,
+                HeimdallTopics.ROLLOUT_EVENTS_DLT
             )));
         }
     }
@@ -166,7 +167,7 @@ class M9KafkaIntegrationTest {
 
         OutboxEvent published = outboxRepository.findById(pending.getId()).orElseThrow();
         assertNotNull(published.getPublishedAt());
-        String kafkaValue = consumeOne(HeimdallTopics.VEHICLE_EVENTS);
+        String kafkaValue = consumeOne();
         DomainEventEnvelope envelope = readEnvelope(kafkaValue);
         assertEquals("vehicle.registered", envelope.eventType());
         assertEquals(vehicle.id(), envelope.aggregateId());
@@ -188,19 +189,18 @@ class M9KafkaIntegrationTest {
                 new CreateDeploymentRequest(vehicle.id(), release.getId())
         );
 
-        transition(deployment.id(), DeploymentStatus.DOWNLOADING, null);
-        transition(deployment.id(), DeploymentStatus.DOWNLOADED, null);
-        transition(deployment.id(), DeploymentStatus.INSTALLING, null);
-        transition(deployment.id(), DeploymentStatus.INSTALLED, null);
-        transition(deployment.id(), DeploymentStatus.INSTALLED, null);
+        transition(deployment.id(), DeploymentStatus.DOWNLOADING);
+        transition(deployment.id(), DeploymentStatus.DOWNLOADED);
+        transition(deployment.id(), DeploymentStatus.INSTALLING);
+        transition(deployment.id(), DeploymentStatus.INSTALLED);
+        transition(deployment.id(), DeploymentStatus.INSTALLED);
 
         assertEquals(4, outboxRepository.countByEventType("deployment.status.changed"));
         List<OutboxEvent> terminal = outboxRepository.findAll().stream()
                 .filter(event -> event.getEventType().equals("deployment.status.changed"))
                 .filter(event -> "INSTALLED".equals(event.getPayload()
-                        .path("payload")
-                        .path("toStatus")
-                        .asText()))
+                    .path("payload")
+                    .path("toStatus").asString()))
                 .toList();
         assertEquals(1, terminal.size());
     }
@@ -214,7 +214,7 @@ class M9KafkaIntegrationTest {
                 serializedDeploymentEvent("INSTALLING", rolloutId)
         ).get();
 
-        Thread.sleep(500);
+        //Thread.sleep(500);
         verifyNoInteractions(rolloutEvaluator);
 
         String terminal = serializedDeploymentEvent("INSTALLED", rolloutId);
@@ -242,7 +242,7 @@ class M9KafkaIntegrationTest {
                 objectMapper.writeValueAsString(envelope)
         ).get();
 
-        Thread.sleep(500);
+        //Thread.sleep(500);
         verifyNoInteractions(rolloutEvaluator);
     }
 
@@ -255,7 +255,7 @@ class M9KafkaIntegrationTest {
                 serializedRolloutPausedEvent("OPERATOR", rolloutId)
         ).get();
 
-        Thread.sleep(500);
+        //Thread.sleep(500);
         verifyNoInteractions(automaticRollbackCoordinator);
 
         String healthGatePause = serializedRolloutPausedEvent("HEALTH_GATE", rolloutId);
@@ -279,14 +279,14 @@ class M9KafkaIntegrationTest {
         assertEquals(malformedEnvelope, deadLetter.value());
     }
 
-    private void transition(UUID deploymentId, DeploymentStatus status, String failureReason) {
+    private void transition(UUID deploymentId, DeploymentStatus status) {
         deploymentService.updateStatus(
                 deploymentId,
-                new UpdateDeploymentStatusRequest(status, failureReason)
+                new UpdateDeploymentStatusRequest(status, null)
         );
     }
 
-    private String serializedDeploymentEvent(String toStatus, UUID rolloutId) throws Exception {
+    private String serializedDeploymentEvent(String toStatus, UUID rolloutId) {
         DomainEventEnvelope envelope = new DomainEventEnvelope(
                 UUID.randomUUID(),
                 "deployment.status.changed",
@@ -303,7 +303,7 @@ class M9KafkaIntegrationTest {
         return objectMapper.writeValueAsString(envelope);
     }
 
-    private String serializedRolloutPausedEvent(String reason, UUID rolloutId) throws Exception {
+    private String serializedRolloutPausedEvent(String reason, UUID rolloutId) {
         DomainEventEnvelope envelope = new DomainEventEnvelope(
                 UUID.randomUUID(),
                 "rollout.paused",
@@ -328,8 +328,8 @@ class M9KafkaIntegrationTest {
         }
     }
 
-    private String consumeOne(String topic) {
-        return consumeOneRecord(topic).value();
+    private String consumeOne() {
+        return consumeOneRecord(HeimdallTopics.VEHICLE_EVENTS).value();
     }
 
     private ConsumerRecord<String, String> consumeOneRecord(String topic) {

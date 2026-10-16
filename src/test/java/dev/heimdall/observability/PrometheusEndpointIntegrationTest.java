@@ -13,7 +13,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureRestTestClient
-@AutoConfigureMetrics(export = true)
+@AutoConfigureMetrics()
 @Testcontainers
 class PrometheusEndpointIntegrationTest {
 
@@ -33,6 +33,7 @@ class PrometheusEndpointIntegrationTest {
                 .expectStatus().isOk()
                 .expectBody(String.class)
                 .value(body -> {
+                    assert body != null;
                     if (!body.contains("# HELP") ||
                             !body.contains("jvm_memory_used_bytes") ||
                             !body.contains("heimdall_vehicles") ||

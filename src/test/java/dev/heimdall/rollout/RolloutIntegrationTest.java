@@ -460,7 +460,7 @@ class RolloutIntegrationTest {
 
         rollbacks.forEach(rollback -> completeDeployment(rollback.id(), DeploymentStatus.INSTALLED));
 
-        assertVehicleVersions(vehicles, "1.3.0");
+        assertVehicleVersions(vehicles);
         assertEquals(DeploymentStatus.FAILED, getDeployment(sourceDeployments.get(2).id()).status());
         assertFailedAutomaticRollbackState(rollout.id());
     }
@@ -998,12 +998,11 @@ class RolloutIntegrationTest {
     }
 
     private void assertVehicleVersions(
-            List<VehicleResponse> vehicles,
-            String expectedSoftwareVersion
+            List<VehicleResponse> vehicles
     ) {
         assertEquals(vehicles.size(), vehicles.stream()
                 .map(vehicle -> getVehicle(vehicle.id()).softwareVersion())
-                .filter(expectedSoftwareVersion::equals)
+                .filter("1.3.0"::equals)
                 .count());
     }
 

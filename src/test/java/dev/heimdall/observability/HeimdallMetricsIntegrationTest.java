@@ -85,17 +85,17 @@ class HeimdallMetricsIntegrationTest {
         rolloutRepository.saveAndFlush(runningRollout);
         rolloutRepository.saveAndFlush(pausedRollout);
 
-        assertGauge("heimdall.vehicles", "online", 1.0);
-        assertGauge("heimdall.vehicles", "offline", 1.0);
-        assertGauge("heimdall.deployments", "active", 1.0);
-        assertGauge("heimdall.deployments", "failed", 1.0);
-        assertGauge("heimdall.rollouts", "running", 1.0);
-        assertGauge("heimdall.rollouts", "paused", 1.0);
+        assertGauge("heimdall.vehicles", "online");
+        assertGauge("heimdall.vehicles", "offline");
+        assertGauge("heimdall.deployments", "active");
+        assertGauge("heimdall.deployments", "failed");
+        assertGauge("heimdall.rollouts", "running");
+        assertGauge("heimdall.rollouts", "paused");
     }
 
-    private void assertGauge(String name, String status, double expected) {
+    private void assertGauge(String name, String status) {
         assertEquals(
-                expected,
+            1.0,
                 meterRegistry.get(name).tag("status", status).gauge().value()
         );
     }
