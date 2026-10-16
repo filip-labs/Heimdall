@@ -9,6 +9,8 @@ import dev.heimdall.deployment.UpdateDeploymentStatusRequest;
 import dev.heimdall.release.SoftwareRelease;
 import dev.heimdall.release.SoftwareReleaseRepository;
 import dev.heimdall.rollout.RolloutEvaluator;
+import dev.heimdall.rollout.AutomaticRollbackCoordinator;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import dev.heimdall.vehicle.CreateVehicleRequest;
 import dev.heimdall.vehicle.VehicleResponse;
 import dev.heimdall.vehicle.VehicleService;
@@ -48,6 +50,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -97,6 +100,9 @@ class M9KafkaIntegrationTest {
     private RolloutEvaluator rolloutEvaluator;
 
     @Autowired
+    private AutomaticRollbackCoordinator automaticRollbackCoordinator;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @Autowired
@@ -104,6 +110,7 @@ class M9KafkaIntegrationTest {
 
     @BeforeEach
     void cleanDatabase() {
+        reset(rolloutEvaluator, automaticRollbackCoordinator);
         jdbcTemplate.execute("""
                 TRUNCATE TABLE
                     event_outbox,
@@ -217,6 +224,61 @@ class M9KafkaIntegrationTest {
         verify(rolloutEvaluator, timeout(10_000).times(2)).evaluateRollout(rolloutId);
     }
 
+    @Test
+    void shouldIgnoreStandaloneTerminalDeploymentEvents() throws Exception {
+        DomainEventEnvelope envelope = new DomainEventEnvelope(
+                UUID.randomUUID(),
+                "deployment.status.changed",
+                1,
+                "deployment",
+                UUID.randomUUID(),
+                Instant.now(),
+                objectMapper.valueToTree(Map.of("toStatus", "FAILED"))
+        );
+
+        kafkaTemplate.send(
+                HeimdallTopics.DEPLOYMENT_EVENTS,
+                envelope.aggregateId().toString(),
+                objectMapper.writeValueAsString(envelope)
+        ).get();
+
+        Thread.sleep(500);
+        verifyNoInteractions(rolloutEvaluator);
+    }
+
+    @Test
+    void shouldRouteOnlyHealthGatePauseEventsToAutomaticRollback() throws Exception {
+        UUID rolloutId = UUID.randomUUID();
+        kafkaTemplate.send(
+                HeimdallTopics.ROLLOUT_EVENTS,
+                rolloutId.toString(),
+                serializedRolloutPausedEvent("OPERATOR", rolloutId)
+        ).get();
+
+        Thread.sleep(500);
+        verifyNoInteractions(automaticRollbackCoordinator);
+
+        String healthGatePause = serializedRolloutPausedEvent("HEALTH_GATE", rolloutId);
+        kafkaTemplate.send(HeimdallTopics.ROLLOUT_EVENTS, rolloutId.toString(), healthGatePause).get();
+        kafkaTemplate.send(HeimdallTopics.ROLLOUT_EVENTS, rolloutId.toString(), healthGatePause).get();
+
+        verify(automaticRollbackCoordinator, timeout(10_000).times(2)).processRollout(rolloutId);
+    }
+
+    @Test
+    void shouldMovePoisonDeploymentRecordToDltAfterBoundedRetries() throws Exception {
+        String key = UUID.randomUUID().toString();
+        String malformedEnvelope = "{not-json";
+
+        kafkaTemplate.send(HeimdallTopics.DEPLOYMENT_EVENTS, key, malformedEnvelope).get();
+
+        ConsumerRecord<String, String> deadLetter = consumeOneRecord(
+                HeimdallTopics.DEPLOYMENT_EVENTS_DLT
+        );
+        assertEquals(key, deadLetter.key());
+        assertEquals(malformedEnvelope, deadLetter.value());
+    }
+
     private void transition(UUID deploymentId, DeploymentStatus status, String failureReason) {
         deploymentService.updateStatus(
                 deploymentId,
@@ -241,6 +303,23 @@ class M9KafkaIntegrationTest {
         return objectMapper.writeValueAsString(envelope);
     }
 
+    private String serializedRolloutPausedEvent(String reason, UUID rolloutId) throws Exception {
+        DomainEventEnvelope envelope = new DomainEventEnvelope(
+                UUID.randomUUID(),
+                "rollout.paused",
+                1,
+                "rollout",
+                rolloutId,
+                Instant.now(),
+                objectMapper.valueToTree(Map.of(
+                        "rolloutId", rolloutId,
+                        "currentStageIndex", 0,
+                        "reason", reason
+                ))
+        );
+        return objectMapper.writeValueAsString(envelope);
+    }
+
     private DomainEventEnvelope readEnvelope(String value) {
         try {
             return objectMapper.readValue(value, DomainEventEnvelope.class);
@@ -250,6 +329,10 @@ class M9KafkaIntegrationTest {
     }
 
     private String consumeOne(String topic) {
+        return consumeOneRecord(topic).value();
+    }
+
+    private ConsumerRecord<String, String> consumeOneRecord(String topic) {
         Properties properties = new Properties();
         properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getBootstrapServers());
         properties.put(ConsumerConfig.GROUP_ID_CONFIG, "m9-test-" + UUID.randomUUID());
@@ -263,7 +346,7 @@ class M9KafkaIntegrationTest {
             while (System.nanoTime() < deadline) {
                 var records = consumer.poll(Duration.ofMillis(250));
                 if (!records.isEmpty()) {
-                    return records.iterator().next().value();
+                    return records.iterator().next();
                 }
             }
         }
@@ -277,6 +360,12 @@ class M9KafkaIntegrationTest {
         @Primary
         RolloutEvaluator testRolloutEvaluator() {
             return mock(RolloutEvaluator.class);
+        }
+
+        @Bean
+        @Primary
+        AutomaticRollbackCoordinator testAutomaticRollbackCoordinator() {
+            return mock(AutomaticRollbackCoordinator.class);
         }
     }
 }

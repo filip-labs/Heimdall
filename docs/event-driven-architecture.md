@@ -81,6 +81,11 @@ The scheduler now defaults to a 30-second reconciliation interval. It remains ne
 | Consumer unavailable | Kafka retains records; consumer catches up and the scheduler reconciles meanwhile |
 | Broker unavailable for an extended period | REST/domain correctness remains PostgreSQL-backed; pending backlog is observable |
 
+Kafka administration is configured not to fail fast. Producers are initialized lazily,
+and listener containers keep reconnecting, so the application can start with PostgreSQL
+available while Kafka is temporarily unavailable. Domain requests still commit their
+outbox records; publication resumes after broker connectivity returns.
+
 ## Trade-offs
 
 - Local Compose uses one KRaft broker and replication factor one; it is not a production cluster design.
