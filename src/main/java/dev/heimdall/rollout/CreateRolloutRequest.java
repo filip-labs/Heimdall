@@ -28,6 +28,7 @@ public record CreateRolloutRequest(
         Boolean automaticRollbackEnabled
 ) {
 
+    //TODO: proveri zasto se ne korisi ova metoda
     @AssertTrue(message = "stages must be strictly increasing and end at 100")
     public boolean isValidStages() {
         if (stages == null || stages.isEmpty()) {
@@ -36,7 +37,7 @@ public record CreateRolloutRequest(
 
         int previousStage = 0;
         for (Integer stage : stages) {
-            if (stage == null || stage <= previousStage || stage < 1 || stage > 100) {
+            if (stage == null || stage <= previousStage || stage > 100) {
                 return false;
             }
             previousStage = stage;

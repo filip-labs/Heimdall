@@ -45,12 +45,12 @@ public class ControlPlaneEventConsumer {
     public void onDeploymentEvent(String serializedEnvelope) {
         try {
             JsonNode envelope = objectMapper.readTree(serializedEnvelope);
-            if (!"deployment.status.changed".equals(envelope.path("eventType").asText())) {
+            if (!"deployment.status.changed".equals(envelope.path("eventType").asString())) {
                 return;
             }
 
             JsonNode payload = envelope.path("payload");
-            if (!TERMINAL_STATUSES.contains(payload.path("toStatus").asText())) {
+            if (!TERMINAL_STATUSES.contains(payload.path("toStatus").asString())) {
                 return;
             }
 
@@ -59,7 +59,7 @@ public class ControlPlaneEventConsumer {
                 return;
             }
 
-            rolloutEvaluator.evaluateRollout(UUID.fromString(rolloutId.asText()));
+            rolloutEvaluator.evaluateRollout(UUID.fromString(rolloutId.asString()));
         } catch (RuntimeException exception) {
             processingFailures.increment();
             throw new IllegalArgumentException("Could not process deployment event", exception);
@@ -73,17 +73,17 @@ public class ControlPlaneEventConsumer {
     public void onRolloutEvent(String serializedEnvelope) {
         try {
             JsonNode envelope = objectMapper.readTree(serializedEnvelope);
-            if (!"rollout.paused".equals(envelope.path("eventType").asText())) {
+            if (!"rollout.paused".equals(envelope.path("eventType").asString())) {
                 return;
             }
 
             JsonNode payload = envelope.path("payload");
-            if (!"HEALTH_GATE".equals(payload.path("reason").asText())) {
+            if (!"HEALTH_GATE".equals(payload.path("reason").asString())) {
                 return;
             }
 
             automaticRollbackCoordinator.processRollout(
-                    UUID.fromString(payload.path("rolloutId").asText())
+                    UUID.fromString(payload.path("rolloutId").asString())
             );
         } catch (RuntimeException exception) {
             processingFailures.increment();

@@ -1,6 +1,5 @@
 package dev.heimdall.observability;
 
-import dev.heimdall.deployment.DeploymentStatus;
 import dev.heimdall.deployment.DeploymentTerminalTransition;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;

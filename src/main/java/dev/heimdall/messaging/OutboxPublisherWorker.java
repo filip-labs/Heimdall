@@ -32,6 +32,7 @@ public class OutboxPublisherWorker {
             ).get(10, TimeUnit.SECONDS);
             event.markPublished(Instant.now());
             outboxMetrics.published(event.getAggregateType());
+            //TODO: Proveri ovaj exception
         } catch (Exception exception) {
             event.markFailed(rootMessage(exception), Instant.now());
             outboxMetrics.publishFailed();

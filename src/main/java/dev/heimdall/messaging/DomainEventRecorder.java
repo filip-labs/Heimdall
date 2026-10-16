@@ -16,6 +16,9 @@ import java.util.Map;
 public class DomainEventRecorder {
 
     private final OutboxService outboxService;
+    public static final String STATUS = "status";
+    public static final String ROLLOUT_ID = "rolloutId";
+
 
     public void vehicleRegistered(Vehicle vehicle) {
         outboxService.append(
@@ -33,7 +36,7 @@ public class DomainEventRecorder {
 
     public void deploymentCreated(Deployment deployment) {
         Map<String, Object> payload = deploymentContext(deployment);
-        payload.put("status", deployment.getStatus());
+        payload.put(STATUS, deployment.getStatus());
         payload.put(
                 "rollbackOfDeploymentId",
                 deployment.getRollbackOfDeployment() == null
@@ -56,7 +59,7 @@ public class DomainEventRecorder {
 
     public void rolloutStarted(Rollout rollout) {
         appendRollout("rollout.started", rollout, Map.of(
-                "rolloutId", rollout.getId(),
+            ROLLOUT_ID, rollout.getId(),
                 "releaseId", rollout.getRelease().getId(),
                 "totalVehicles", rollout.getTotalVehicles(),
                 "automaticRollbackEnabled", rollout.isAutomaticRollbackEnabled()
@@ -77,7 +80,7 @@ public class DomainEventRecorder {
 
     public void rolloutPaused(Rollout rollout, String reason) {
         appendRollout("rollout.paused", rollout, Map.of(
-                "rolloutId", rollout.getId(),
+            ROLLOUT_ID, rollout.getId(),
                 "currentStageIndex", rollout.getCurrentStageIndex(),
                 "reason", reason
         ));
@@ -129,7 +132,7 @@ public class DomainEventRecorder {
         payload.put("vehicleId", deployment.getVehicle().getId());
         payload.put("releaseId", deployment.getRelease().getId());
         payload.put(
-                "rolloutId",
+            ROLLOUT_ID,
                 deployment.getRolloutStage() == null
                         ? null
                         : deployment.getRolloutStage().getRollout().getId()
@@ -147,18 +150,18 @@ public class DomainEventRecorder {
 
     private Map<String, Object> stagePayload(RolloutStage stage) {
         return Map.of(
-                "rolloutId", stage.getRollout().getId(),
+            ROLLOUT_ID, stage.getRollout().getId(),
                 "rolloutStageId", stage.getId(),
                 "stageIndex", stage.getStageIndex(),
                 "targetVehicleCount", stage.getTargetVehicleCount(),
-                "status", stage.getStatus()
+            STATUS, stage.getStatus()
         );
     }
 
     private Map<String, Object> rolloutStatePayload(Rollout rollout) {
         return Map.of(
-                "rolloutId", rollout.getId(),
-                "status", rollout.getStatus(),
+            ROLLOUT_ID, rollout.getId(),
+            STATUS, rollout.getStatus(),
                 "currentStageIndex", rollout.getCurrentStageIndex()
         );
     }

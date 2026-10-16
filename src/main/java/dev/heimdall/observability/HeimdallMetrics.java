@@ -1,3 +1,4 @@
+//TODO: proveri zasto ove pise da se ova klasa ne koristi
 package dev.heimdall.observability;
 
 import dev.heimdall.deployment.DeploymentRepository;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class HeimdallMetrics {
+    public static final String STATUS = "status";
 
     public HeimdallMetrics(
             MeterRegistry meterRegistry,
@@ -35,7 +37,7 @@ public class HeimdallMetrics {
                         value -> value.countByConnectivityStatus(ConnectivityStatus.ONLINE)
                 )
                 .description("Current number of vehicles by connectivity status")
-                .tag("status", "online")
+                .tag(STATUS, "online")
                 .register(registry);
 
         Gauge.builder(
@@ -44,7 +46,7 @@ public class HeimdallMetrics {
                         value -> value.countByConnectivityStatus(ConnectivityStatus.OFFLINE)
                 )
                 .description("Current number of vehicles by connectivity status")
-                .tag("status", "offline")
+                .tag(STATUS, "offline")
                 .register(registry);
     }
 
@@ -60,7 +62,7 @@ public class HeimdallMetrics {
                         )
                 )
                 .description("Current number of deployments by operational status")
-                .tag("status", "active")
+                .tag(STATUS, "active")
                 .register(registry);
 
         Gauge.builder(
@@ -69,7 +71,7 @@ public class HeimdallMetrics {
                         value -> value.countByStatus(DeploymentStatus.FAILED)
                 )
                 .description("Current number of deployments by operational status")
-                .tag("status", "failed")
+                .tag(STATUS, "failed")
                 .register(registry);
     }
 
@@ -83,7 +85,7 @@ public class HeimdallMetrics {
                         value -> value.countByStatus(RolloutStatus.RUNNING)
                 )
                 .description("Current number of rollouts by status")
-                .tag("status", "running")
+                .tag(STATUS, "running")
                 .register(registry);
 
         Gauge.builder(
@@ -92,7 +94,7 @@ public class HeimdallMetrics {
                         value -> value.countByStatus(RolloutStatus.PAUSED)
                 )
                 .description("Current number of rollouts by status")
-                .tag("status", "paused")
+                .tag(STATUS, "paused")
                 .register(registry);
     }
 }
