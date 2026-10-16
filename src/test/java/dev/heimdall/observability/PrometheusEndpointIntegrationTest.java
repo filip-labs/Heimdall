@@ -1,5 +1,6 @@
 package dev.heimdall.observability;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics;
@@ -25,8 +26,15 @@ class PrometheusEndpointIntegrationTest {
     @Autowired
     private RestTestClient restClient;
 
+    @Autowired
+    private MeterRegistry meterRegistry;
+
     @Test
     void shouldExposePrometheusMetrics() {
+        assertMeterRegistered("hikaricp.connections.active");
+        assertMeterRegistered("heimdall.deployments.created");
+        assertMeterRegistered("heimdall.rollout.evaluation.duration");
+
         restClient.get()
                 .uri("/actuator/prometheus")
                 .exchange()
@@ -47,5 +55,11 @@ class PrometheusEndpointIntegrationTest {
                         );
                     }
                 });
+    }
+
+    private void assertMeterRegistered(String name) {
+        if (meterRegistry.find(name).meter() == null) {
+            throw new AssertionError("Expected registered meter: " + name);
+        }
     }
 }
