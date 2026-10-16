@@ -23,18 +23,16 @@ Heimdall models those concerns in a compact project that is suitable for enginee
 ## Current Architecture
 
 ```mermaid
-flowchart LR
-    SIM[Go Fleet Simulator]
-    API[Spring Boot Control Plane]
-    DB[(PostgreSQL)]
-    ART[OTA Artifact Endpoint]
-
-    SIM -->|Register vehicles| API
-    SIM -->|Heartbeats| API
-    SIM -->|Poll active deployments| API
-    SIM -->|Report OTA state| API
-    API -->|Persist state| DB
-    SIM -->|Download artifacts| ART
+flowchart TD
+    SIM[Go Fleet Simulator] -->|HTTP| API[Spring Boot Control Plane]
+    SIM -->|download| ART[OTA Artifact Endpoint]
+    API -->|domain state + event intent| DB[(PostgreSQL + outbox)]
+    DB --> PUB[Outbox Publisher]
+    PUB --> K[Kafka]
+    K --> CON[Control-plane Consumers]
+    CON -->|re-read and lock| DB
+    REC[Reconciliation Scheduler] -->|fallback| DB
+    API --> MET[Prometheus / Grafana]
 ```
 
 The Spring Boot application uses package-by-domain organization:
@@ -43,6 +41,7 @@ The Spring Boot application uses package-by-domain organization:
 src/main/java/dev/heimdall/
 ├── HeimdallApplication.java
 ├── deployment/
+├── messaging/
 ├── release/
 ├── rollout/
 └── vehicle/
@@ -346,16 +345,20 @@ go test -race ./...
 ├── simulator/
 ├── src/main/java/dev/heimdall/
 │   ├── deployment/
+│   ├── messaging/
 │   ├── release/
 │   ├── rollout/
 │   └── vehicle/
 ├── src/main/resources/
 │   ├── application.yml
-│   ├── db/migration/
+│   ├── db/migration/       # includes V10 transactional outbox
 │   └── static/artifacts/
+├── docs/
+│   └── event-driven-architecture.md
 └── src/test/java/dev/heimdall/
     ├── deployment/
     ├── integration/
+    ├── messaging/
     └── rollout/
 ```
 

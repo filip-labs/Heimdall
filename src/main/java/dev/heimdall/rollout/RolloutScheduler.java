@@ -12,8 +12,8 @@ public class RolloutScheduler {
     private final AutomaticRollbackCoordinator automaticRollbackCoordinator;
 
     @Scheduled(
-            fixedDelayString = "${heimdall.rollout.evaluation-interval:1s}",
-            initialDelayString = "${heimdall.rollout.evaluation-interval:1s}"
+            fixedDelayString = "${heimdall.rollout.evaluation-interval:30s}",
+            initialDelayString = "${heimdall.rollout.evaluation-interval:30s}"
     )
     public void evaluate() {
         rolloutEvaluator.evaluateRunningRollouts();
