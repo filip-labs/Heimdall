@@ -1,5 +1,6 @@
 import http from 'k6/http';
 import { check } from 'k6';
+import { fleetIndexFor } from './config.js';
 
 export function vinFor(runId, index) {
   const numericRunId = String(runId).replace(/\D/g, '').slice(-4).padStart(4, '0');
@@ -18,7 +19,6 @@ export function registerVehicle(cfg, index) {
 }
 
 export function bootstrapFleet(cfg) {
-  const vehicles = [];
   for (let offset = 1; offset <= cfg.fleetSize; offset += 100) {
     const batch = [];
     const upper = Math.min(offset + 99, cfg.fleetSize);
@@ -41,8 +41,20 @@ export function bootstrapFleet(cfg) {
       if (response.status !== 201) {
         throw new Error(`fleet bootstrap failed with HTTP ${response.status}; use a fresh RUN_ID`);
       }
-      vehicles.push(response.json());
     }
   }
-  return vehicles;
+  return { fleetSize: cfg.fleetSize, runId: cfg.runId };
+}
+
+export function resolveVehicleId(cfg, vuId) {
+  const fleetIndex = fleetIndexFor(vuId, cfg.fleetSize);
+  const vin = vinFor(cfg.runId, fleetIndex);
+  const response = http.get(`${cfg.baseUrl}/api/v1/vehicles/by-vin/${vin}`, {
+    tags: { operation: 'vehicle_resolve' },
+  });
+  const resolved = check(response, { 'vehicle resolved': (res) => res.status === 200 });
+  if (!resolved) {
+    throw new Error(`could not resolve fleet vehicle ${fleetIndex} (${vin}): HTTP ${response.status}`);
+  }
+  return response.json().id;
 }
