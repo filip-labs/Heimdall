@@ -4,6 +4,8 @@ import dev.heimdall.api.ResourceNotFoundException;
 import dev.heimdall.deployment.DeploymentRepository;
 import dev.heimdall.deployment.DeploymentStatus;
 import dev.heimdall.messaging.DomainEventRecorder;
+import dev.heimdall.observability.PerformanceMetrics;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,9 +27,19 @@ public class RolloutEvaluationWorker {
     private final DeploymentRepository deploymentRepository;
     private final RolloutDeploymentCoordinator deploymentCoordinator;
     private final DomainEventRecorder eventRecorder;
+    private final PerformanceMetrics performanceMetrics;
 
     @Transactional
     public void evaluateRollout(UUID rolloutId) {
+        Timer.Sample sample = Timer.start();
+        try {
+            evaluateRolloutInternal(rolloutId);
+        } finally {
+            sample.stop(performanceMetrics.rolloutEvaluationDuration());
+        }
+    }
+
+    private void evaluateRolloutInternal(UUID rolloutId) {
         Rollout rollout = rolloutRepository.findByIdForUpdate(rolloutId)
                 .orElseThrow(() -> new ResourceNotFoundException("Rollout not found"));
 

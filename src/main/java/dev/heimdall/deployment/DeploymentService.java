@@ -98,6 +98,7 @@ public class DeploymentService {
         ));
 
         domainEventRecorder.deploymentCreated(savedDeployment);
+        eventPublisher.publishEvent(new DeploymentCreated());
 
         return savedDeployment;
     }

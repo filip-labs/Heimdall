@@ -240,6 +240,15 @@ cd simulator
 FLEET_SIZE=100 go run .
 ```
 
+Run repeatable HTTP load scenarios with k6:
+
+```bash
+PROFILE=100 RUN_ID=1001 k6 run load-tests/k6/mixed-fleet.js
+```
+
+See [Scalability and load testing](docs/scalability-and-load-testing.md) for the
+100/1,000/5,000 profiles, isolated workloads, metrics, and interpretation.
+
 ## Observability
 
 The control plane exposes health, application information, and Prometheus
@@ -376,6 +385,8 @@ go test -race ./...
 - Simulator retries are limited to transient request errors and retryable HTTP statuses.
 - Fleet and control-plane gauges read current PostgreSQL state at scrape time.
 - OTA outcome and duration metrics are recorded only after a terminal status transaction commits.
+- Deployment creation throughput is counted only after its transaction commits.
+- Rollout evaluation duration includes locking, health checks, and stage advancement work.
 
 ## Project Resources
 
@@ -383,6 +394,7 @@ go test -race ./...
 - [GitHub Issues](https://github.com/filip-labs/Heimdall/issues)
 - [Postman API collection](postman/Heimdall.postman_collection.json)
 - [Architecture overview](#current-architecture)
+- [Scalability and load testing](docs/scalability-and-load-testing.md)
 
 ## Roadmap
 

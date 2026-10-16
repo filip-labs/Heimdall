@@ -32,6 +32,11 @@ spring:
       auto-offset-reset: earliest
 
 management:
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        heimdall.rollout.evaluation.duration: true
   endpoints:
     web:
       exposure:
