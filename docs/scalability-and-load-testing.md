@@ -19,7 +19,21 @@ The scripts and configuration are documented in
 [`load-tests/README.md`](../load-tests/README.md). Run the load generator on a
 separate host for meaningful capacity measurements where possible. The mixed
 workload intentionally runs independent heartbeat and polling loops, matching
-the Go agent's two cadences.
+the Go agent's two cadences. Both loops map their VUs onto the same deterministic
+fleet; they do not create two logical fleets.
+
+Fleet bootstrap is tagged `operation=bootstrap` and returns only minimal run
+metadata. Each VU then resolves its one deterministic VIN once with
+`operation=vehicle_resolve`. Steady-state requests use `operation=heartbeat`
+or `operation=deployment_poll`. Filter by those operation tags when reporting
+endpoint throughput, latency, and errors. A deployment poll returning `204`
+means the vehicle has no active deployment and is a successful idle-fleet
+response, not an error.
+
+The profile-aware setup timeouts (`2m`, `5m`, and `10m`) are harness safety
+bounds, not measured Heimdall capacity. Heartbeat and polling environment
+durations are parsed into numeric seconds before k6 `sleep()`; executor stage
+durations remain native k6 duration strings.
 
 ## Metrics
 
@@ -82,7 +96,10 @@ docker stats heimdall-postgres heimdall-kafka heimdall-prometheus heimdall-grafa
 ```
 
 If the application runs outside Compose, record its process/container CPU and
-memory separately. Capture k6 host CPU, memory, open files, and network too.
+memory separately. Capture k6 host CPU, memory, open files, network, achieved
+iteration rate, and dropped iterations too. For a local load generator, use the
+host process monitor (`top`, `htop`, or equivalent); for containerized k6, add
+its container name to `docker stats`.
 
 ## Interpreting saturation
 

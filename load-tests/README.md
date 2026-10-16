@@ -34,6 +34,12 @@ Configuration is environment-based:
 | `RAMP_DOWN` | profile-specific | Ramp-down duration override |
 | `HEARTBEAT_INTERVAL` | `15s` | Per-vehicle heartbeat cadence |
 | `POLL_INTERVAL` | `10s` | Per-vehicle deployment-poll cadence |
+| `SETUP_TIMEOUT` | `2m` / `5m` / `10m` | Bootstrap safety bound for the 100 / 1,000 / 5,000 profile |
+
+Heartbeat and polling intervals accept positive `ms`, `s`, `m`, or `h` values
+such as `500ms`, `15s`, or `1m`. They are converted to numeric seconds before
+being passed to k6 `sleep()`. Stage durations and `SETUP_TIMEOUT` remain k6
+duration strings. Invalid and zero/negative intervals fail during script setup.
 
 The heartbeat, polling, and mixed scenarios bootstrap their fleet before the
 timed scenario. Reusing a `RUN_ID` intentionally fails fast instead of silently
@@ -42,10 +48,41 @@ measuring conflict responses. The harness has only broad safety thresholds
 record observed throughput, p95, p99, error rate, and saturation before any
 performance target is tightened.
 
+Bootstrap returns only the small run identity, never the complete vehicle
+response array. Each VU maps its global `__VU` through
+`((__VU - 1) % fleetSize) + 1`, derives the deterministic VIN, and resolves that
+single vehicle once through the by-VIN endpoint. This also makes the two mixed
+scenarios share one logical fleet even when their global VU IDs occupy different
+ranges.
+
+Requests are tagged by `operation`:
+
+- `bootstrap` and `vehicle_resolve` are setup traffic
+- `registration`, `heartbeat`, and `deployment_poll` are measured workload traffic
+
+Filter M10B results by the relevant steady-state `operation`; do not include
+bootstrap or resolution traffic in heartbeat or polling throughput. Deployment
+polling treats both `200` (active deployment) and `204` (no active deployment)
+as successful API responses.
+
+Short smoke commands, using a fresh `RUN_ID` for each script:
+
+```bash
+PROFILE=100 RUN_ID=1101 RAMP_UP=3s STEADY_DURATION=5s RAMP_DOWN=2s \
+  k6 run load-tests/k6/registration.js
+PROFILE=100 RUN_ID=1102 RAMP_UP=3s STEADY_DURATION=5s RAMP_DOWN=2s \
+  k6 run load-tests/k6/heartbeat.js
+PROFILE=100 RUN_ID=1103 RAMP_UP=3s STEADY_DURATION=5s RAMP_DOWN=2s \
+  k6 run load-tests/k6/deployment-polling.js
+PROFILE=100 RUN_ID=1104 RAMP_UP=3s STEADY_DURATION=5s RAMP_DOWN=2s \
+  k6 run load-tests/k6/mixed-fleet.js
+```
+
 Validate scripts without generating load:
 
 ```bash
 for script in load-tests/k6/*.js; do k6 inspect "$script"; done
+npm --prefix load-tests test
 ```
 
 See [Scalability and load testing](../docs/scalability-and-load-testing.md) for
