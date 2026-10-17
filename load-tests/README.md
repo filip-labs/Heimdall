@@ -91,3 +91,13 @@ For official M10B measurements, follow the
 [local baseline runbook](../docs/performance/m10b-local-runbook.md) and use the
 [evidence template](../docs/performance/baseline-template.md). Raw files under
 `load-tests/results/` are intentionally ignored by Git.
+
+## Local orchestration
+
+For one-command reset/start/observe/analyze, use
+`./scripts/m10b/run.sh --profile 100 --scenario heartbeat --label run1 --run-id 1222 --dry-run`.
+Real runs require `--reset-disposable-db` and delete the local disposable test DB.
+`./scripts/m10b/scenario.sh --profile 100 --scenario mixed --run-id-base 2200 --dry-run`
+previews warmup plus two measured runs at one fleet size. See the
+[automation runbook](../docs/performance/m10b-local-runbook.md#automated-local-k6-runs-one-terminal)
+for safety, artifacts, overrides, M10D reuse and manual fallback.

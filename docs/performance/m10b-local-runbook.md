@@ -6,16 +6,159 @@ machine. Do not change application, database, pool, scheduler, Kafka, outbox, or
 simulator configuration between measured runs unless the change is explicitly
 recorded and the affected suite is repeated.
 
+## Automated local k6 runs (one terminal)
+
+The runner automates evidence collection for #36; it produces no authoritative
+performance classification. M10C has not started. The manual steps below remain
+the fallback for debugging and for simulator/rollout sessions.
+
+Prerequisites: Bash, Python **3.9+**, curl, Git, local Docker/Compose, Java **21**,
+the Maven wrapper, k6 (with `k6/execution`), Go and `ps`. No Python packages are
+required. macOS selects JDK 21 with `/usr/libexec/java_home -v 21`; Linux uses
+`JAVA_HOME` or PATH and refuses other Java versions. Docker must use a local
+Unix socket. The runner uses Compose project `heimdall` and this repository's
+`compose.yaml`; stop any existing backend on port 8080 first. The observation
+endpoints must become ready before load starts.
+
+Start with a non-destructive preview (no tools/services started, no files written):
+
+```bash
+./scripts/m10b/run.sh --profile 100 --scenario heartbeat --label run1 --run-id 1222 --dry-run
+```
+
+A real command must explicitly acknowledge that **the local disposable Compose
+PostgreSQL volume will be deleted**. This also resets any existing manual local
+fleet state; preserve needed evidence/data first.
+
+```bash
+./scripts/m10b/run.sh --profile 100 --scenario polling --label run2 --run-id 1223 --reset-disposable-db
+./scripts/m10b/run.sh --profile 100 --scenario mixed --label warmup --run-id 1224 --reset-disposable-db
+./scripts/m10b/scenario.sh --profile 100 --scenario mixed --run-id-base 2200 --reset-disposable-db
+```
+
+`scenario.sh` runs warmup/run1/run2 with IDs base/base+1/base+2, resets the DB
+before each, and writes a comparison with measured-run RPS/p95/p99 variation.
+It stops on failure and never advances to another fleet size. It also accepts
+`--dry-run`. Profile 5000 still runs two measured repetitions when explicitly
+requested through this convenience command; use individual runs if host limits
+make that impractical.
+
+Supported scenarios map to the existing `registration.js`, `heartbeat.js`,
+`deployment-polling.js` and `mixed-fleet.js`. A generated `entry.js` imports the
+selected script, re-exports its options and delegates its workload functions.
+Once per VU/operation it records `execution.scenario.startTime` in an observation
+Gauge. This avoids guessing the steady-window origin from process start or the
+first HTTP request; no requests, sleeps, stages or thresholds are changed.
+The wrapper and empty explicit k6 config are retained for audit. User `K6_*`
+option overrides are rejected and the user's default k6 config is not loaded.
+
+Profile defaults are read from `load-tests/k6/lib/config.js` (and fail clearly if
+its literal structure changes):
+
+| Profile | Ramp-up | Steady | Ramp-down | Setup timeout |
+|---|---|---|---|---|
+| 100 | 30s | 2m | 15s | 2m |
+| 1000 | 2m | 5m | 30s | 5m |
+| 5000 | 5m | 10m | 1m | 10m |
+
+`RAMP_UP`, `STEADY_DURATION`, `RAMP_DOWN`, `SETUP_TIMEOUT`,
+`HEARTBEAT_INTERVAL`, `POLL_INTERVAL` and `SOFTWARE_VERSION` can be explicitly
+overridden through the environment; all effective values are recorded.
+Heartbeat/polling defaults remain 15s/10s. The runner is local-only and rejects
+remote `BASE_URL`. `--sample-interval 15` and `--startup-timeout 180` control
+observation spacing and readiness bounds. Sampling commands have their own
+bounded timeouts; collection time adds to the interval, and every sample is
+timestamped. It is not a real-time profiler.
+
+Every run requires a numeric 1–4 digit RUN_ID. Automation reserves IDs across
+phases under ignored `load-tests/results/.m10-run-ids/`; `1` and `0001` are the
+same namespace. Failed runs retain their reservation. Choose new IDs even when
+retrying. This ledger cannot detect IDs used by old manual runs; fresh DB reset
+still occurs before every automated workload.
+
+`--phase m10b` is the default and enforces unchanged committed **and local**
+executable baseline paths (`src`, `simulator`, `load-tests/k6`, `pom.xml`,
+`compose.yaml`). `--phase m10d` records those differences without enforcing
+M10A equality, so the same runner can collect before/after evidence later.
+Both phases also reject staged, unstaged or untracked local changes under
+`scripts/m10b` (including dry-run). Commit or restore tooling changes before a
+run; unrelated documentation edits do not block it. Metadata records
+`orchestration_local_state` and `orchestration_integrity`. Ignored Python cache
+files are not source changes. Selecting M10D does not automatically begin
+optimization work.
+
+Artifacts are unique, local and Git-ignored:
+
+```text
+load-tests/results/m10b/<UTC-time>-<profile>-<scenario>-<label>-<unique-suffix>/
+  metadata.json           # identity, host/tool versions, effective config, exact command
+  entry.js, k6-config.json
+  lifecycle.log, backend.log, k6.log
+  k6-summary.json, k6-samples.json
+  resources.csv           # owned Spring JVM (not Maven), k6, four containers
+  metrics.csv, prometheus.txt  # timestamped Hikari/JVM/GC/app series and full raw scrape
+  postgres-activity.txt, postgres-tables.txt
+  database.txt, kafka-consumer-groups.txt
+  analysis.json, report.md
+```
+
+Existing manual result files are never overwritten. Interrupted/failed runs
+keep partial evidence and a report; artifacts for steps not reached may be
+absent. Ctrl+C stops the owned k6/backend process groups and waits for bounded
+monitor commands. Compose stays up for inspection; no volume is deleted during
+cleanup. The next explicitly requested run resets it. A filesystem lock blocks
+concurrent automation in this checkout. Do not run manual workloads or runners
+from other checkouts against the same Compose project concurrently.
+
+The report separates setup, registration, heartbeat and deployment polling.
+Recurring RPS uses the half-open steady interval `[scenario start + ramp-up,
+scenario start + ramp-up + steady)`. Request timestamps denote completion;
+latencies use linear percentile interpolation. Missing markers or incomplete
+windows are explicitly flagged, never replaced with guessed full-test RPS.
+Failures include unexpected operation-specific HTTP status (including transport
+status 0). k6 checks, VUs and dropped-iteration samples are retained separately.
+Registration reports counts and latency, never sustained throughput. All four
+scenarios validate expected vehicle and distinct-VIN counts after completion.
+
+Missing optional metrics and monitor failures are reported. Raw Prometheus
+counter samples support later GC/outbox rate calculations. Docker CPU >100%
+is valid across cores. All reports start **INCONCLUSIVE / REVIEW_REQUIRED**;
+review k6 thresholds, cadence deviations, errors, generator pressure and
+correlated backend/DB/pool evidence before choosing a classification listed in
+section 10. No automatic saturation conclusion is made, and a Kafka spike or
+latency increase alone is insufficient.
+
+Rebuild a report offline with:
+
+```bash
+python3 scripts/m10b/analyze.py load-tests/results/m10b/<run-directory>
+python3 -m unittest discover -s scripts/m10b/tests -v
+npm --prefix load-tests test
+```
+
+Go simulator and healthy rollout remain manual sections 6–7: their runbook
+uses an indefinite agent session and interactive rollout observation, without
+a defined stop/measurement window. Automating those as if they were bounded
+k6 runs would invent a benchmark contract. No new backend API is introduced.
+Linux and macOS share the orchestration; host inventory differs (`/proc` versus
+`sysctl`). `ps` CPU is its platform-specific process average, not an identical
+instantaneous counter across OSes. Use matched hosts/configuration for M10D.
+
 ## 1. Verify the immutable baseline
 
 ```bash
 git switch main
 git pull --ff-only
-test "$(git rev-parse HEAD)" = "6699f04d6ea7d933cb4c161fd62b4e2745cd8caf"
+git diff --exit-code 6699f04d6ea7d933cb4c161fd62b4e2745cd8caf..HEAD -- \
+  src simulator load-tests/k6 pom.xml compose.yaml
+git status --short -- src simulator load-tests/k6 pom.xml compose.yaml
 git status --short
 ```
 
-Stop if the SHA differs or the worktree is not clean. Record the environment:
+Stop if executable paths differ from the baseline, including staged, unstaged
+or untracked executable files. HEAD may include documentation/orchestration
+commits after `6699f04` (for example `4ed2a13`); record the actual tested SHA and
+working-tree state. Record the environment:
 
 ```bash
 mkdir -p load-tests/results
@@ -127,7 +270,7 @@ active:
 ```bash
 K6_PID=$(pgrep -n k6)
 pidstat -p "$K6_PID" 1
-ps -o pid,%cpu,%mem,rss,vsz,nlwp,cmd -p "$K6_PID"
+ps -o pid,%cpu,%mem,rss,vsz,command -p "$K6_PID"
 ```
 
 Also record k6 `vus`, `vus_max`, `dropped_iterations`, client/connection errors,

@@ -53,3 +53,43 @@ jobs:
 
       - name: Run Go race detector
         run: go test -race ./...
+
+  m10b-tooling-tests:
+    name: M10B Tooling Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Set up pinned k6
+        uses: grafana/setup-k6-action@43b9fc21641a76002687994433dd586f56e791b1 # v1
+        with:
+          k6-version: '1.6.1'
+
+      - name: Validate shell and Python syntax
+        run: |
+          bash -n scripts/m10b/run.sh scripts/m10b/scenario.sh
+          python3 -m py_compile \
+            scripts/m10b/runner.py \
+            scripts/m10b/analyze.py \
+            scripts/m10b/tests/test_runner.py
+
+      - name: Run tooling correctness tests (no benchmarks)
+        run: |
+          # Require k6 so wrapper/marker tests cannot silently skip in CI.
+          k6 version
+          python3 -c "import shutil; assert shutil.which('k6'), 'k6 is required in CI'"
+          python3 -m unittest discover -s scripts/m10b/tests -v
+          npm --prefix load-tests test
