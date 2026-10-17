@@ -7,7 +7,9 @@ into issue #36. Do not mark warm-ups as measured runs.
 
 | Field | Value |
 |---|---|
-| Tested SHA | `6699f04d6ea7d933cb4c161fd62b4e2745cd8caf` |
+| Tested SHA | Actual `git rev-parse HEAD` |
+| Executable baseline | `6699f04d6ea7d933cb4c161fd62b4e2745cd8caf`; protected paths unchanged |
+| Phase / working-tree state | |
 | Date/time/timezone | |
 | Warm-up or measured | |
 | Profile | `100` / `1000` / `5000` |
