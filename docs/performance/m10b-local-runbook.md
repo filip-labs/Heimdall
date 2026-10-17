@@ -80,7 +80,12 @@ still occurs before every automated workload.
 executable baseline paths (`src`, `simulator`, `load-tests/k6`, `pom.xml`,
 `compose.yaml`). `--phase m10d` records those differences without enforcing
 M10A equality, so the same runner can collect before/after evidence later.
-Selecting M10D does not automatically begin optimization work.
+Both phases also reject staged, unstaged or untracked local changes under
+`scripts/m10b` (including dry-run). Commit or restore tooling changes before a
+run; unrelated documentation edits do not block it. Metadata records
+`orchestration_local_state` and `orchestration_integrity`. Ignored Python cache
+files are not source changes. Selecting M10D does not automatically begin
+optimization work.
 
 Artifacts are unique, local and Git-ignored:
 

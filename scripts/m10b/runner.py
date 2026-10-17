@@ -111,7 +111,11 @@ def baseline(phase):
     local = command(['git', 'status', '--porcelain', '--untracked-files=all', '--', *PATHS])
     if phase == 'm10b' and (committed or local):
         raise RuntimeError('M10B executable baseline differs (including local/untracked changes):\n' + committed + '\n' + local)
-    return {'baseline': BASELINE, 'executable_committed_diff': committed, 'executable_local_state': local}
+    orchestration = command(['git', 'status', '--porcelain', '--untracked-files=all', '--', 'scripts/m10b'])
+    if orchestration:
+        raise RuntimeError('Orchestration has local changes; commit or restore scripts/m10b before running:\n' + orchestration)
+    return {'baseline': BASELINE, 'executable_committed_diff': committed, 'executable_local_state': local,
+            'orchestration_local_state': orchestration, 'orchestration_integrity': 'PASS'}
 
 
 def preflight(config):

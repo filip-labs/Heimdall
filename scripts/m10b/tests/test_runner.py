@@ -124,10 +124,10 @@ class RunnerTests(unittest.TestCase):
 
     def test_baseline_guard(self):
         for committed, local in [('M src/a', ''), ('', '?? simulator/a'), ('', ' M pom.xml')]:
-            with patch.object(runner, 'command', side_effect=['', committed, local]):
+            with patch.object(runner, 'command', side_effect=['', committed, local, '']):
                 with self.assertRaisesRegex(RuntimeError, 'baseline differs'):
                     runner.baseline('m10b')
-            with patch.object(runner, 'command', side_effect=['', committed, local]):
+            with patch.object(runner, 'command', side_effect=['', committed, local, '']):
                 self.assertEqual(runner.baseline('m10d')['executable_local_state'], local)
 
     def test_missing_docker(self):
@@ -146,7 +146,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_cli(self):
         base = [sys.executable, str(runner.ROOT / 'scripts/m10b/runner.py')]
-        for args in [['--help'], ['--profile', '100', '--scenario', 'mixed', '--run-id', '9910', '--dry-run']]:
+        for args in [['--help']]:
             result = subprocess.run(base + args, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
         for args in [['--profile', '99'], ['--profile', '100', '--scenario', 'unknown'],
@@ -164,18 +164,19 @@ class RunnerTests(unittest.TestCase):
             popen.assert_not_called()
 
     def test_suite_dry_run_stops_at_same_scale(self):
-        result = subprocess.run([str(runner.ROOT / 'scripts/m10b/scenario.sh'), '--profile', '100',
-                                 '--scenario', 'mixed', '--run-id-base', '2200', '--dry-run'],
-                                text=True, capture_output=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        output = io.StringIO()
+        argv = ['scenario.sh', '--suite', '--profile', '100', '--scenario', 'mixed',
+                '--run-id-base', '2200', '--dry-run']
+        with patch.object(sys, 'argv', argv), patch.object(runner, 'baseline', return_value={}), contextlib.redirect_stdout(output):
+            runner.main()
         for label, run_id in [('warmup', 2200), ('run1', 2201), ('run2', 2202)]:
-            self.assertIn(f'100/mixed/{label}; RUN_ID={run_id}', result.stdout)
-        self.assertNotIn('1000/mixed', result.stdout)
+            self.assertIn(f'100/mixed/{label}; RUN_ID={run_id}', output.getvalue())
+        self.assertNotIn('1000/mixed', output.getvalue())
 
     def test_reset_requires_acknowledgement(self):
         args = type('Args', (), dict(profile='100', scenario='heartbeat', phase='m10b',
                                     dry_run=False, sample_interval=15, reset_disposable_db=False))()
-        with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(RuntimeError, 'Reset not acknowledged'):
+        with patch.object(runner, 'baseline', return_value={}), contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(RuntimeError, 'Reset not acknowledged'):
             runner.run(args, 'run1', '1')
 
     def test_preflight_failure_retains_report_without_reset(self):
@@ -281,6 +282,79 @@ class RunnerTests(unittest.TestCase):
     def test_readiness_failure_bounded(self):
         with self.assertRaisesRegex(RuntimeError, 'Timed out'):
             runner.wait_ready('test', lambda: False, 0)
+
+
+class IntegrityTests(unittest.TestCase):
+    """Use real Git status in an isolated repo, never dirty the user's checkout."""
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.root_patch = patch.object(runner, 'ROOT', self.root)
+        self.root_patch.start()
+        self.addCleanup(self.root_patch.stop)
+        self.git('init', '-q')
+        self.git('config', 'user.email', 'test@example.invalid')
+        self.git('config', 'user.name', 'Tooling test')
+        for name in ['src/example', 'simulator/example', 'load-tests/k6/example',
+                     'pom.xml', 'compose.yaml', 'scripts/m10b/runner.py', 'docs/note.md']:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('baseline\n')
+        self.git('add', '.')
+        self.git('-c', 'commit.gpgsign=false', 'commit', '-qm', 'fixture baseline')
+        baseline_patch = patch.object(runner, 'BASELINE', self.git('rev-parse', 'HEAD'))
+        baseline_patch.start()
+        self.addCleanup(baseline_patch.stop)
+
+    def git(self, *args):
+        return runner.command(['git', *args])
+
+    def test_m10b_rejects_dirty_executable_paths(self):
+        for name in ['src/example', 'simulator/example', 'load-tests/k6/example', 'pom.xml', 'compose.yaml']:
+            with self.subTest(path=name):
+                path = self.root / name
+                path.write_text('modified\n')
+                with self.assertRaisesRegex(RuntimeError, 'executable baseline differs'):
+                    runner.baseline('m10b')
+                path.write_text('baseline\n')
+
+    def test_both_phases_reject_tracked_and_untracked_orchestration(self):
+        tracked = self.root / 'scripts/m10b/runner.py'
+        extra = self.root / 'scripts/m10b/helper.py'
+        for state in ['unstaged', 'staged', 'untracked']:
+            if state == 'untracked':
+                extra.write_text('new helper\n')
+            else:
+                tracked.write_text('modified\n')
+                if state == 'staged':
+                    self.git('add', 'scripts/m10b/runner.py')
+            for phase in ['m10b', 'm10d']:
+                with self.subTest(phase=phase, state=state):
+                    with self.assertRaisesRegex(RuntimeError, 'Orchestration has local changes'):
+                        runner.baseline(phase)
+            self.git('reset', '-q', 'HEAD', '--', 'scripts/m10b/runner.py')
+            tracked.write_text('baseline\n')
+            extra.unlink(missing_ok=True)
+
+    def test_m10d_allows_changed_executable_baseline(self):
+        (self.root / 'src/example').write_text('new implementation\n')
+        self.git('add', 'src/example')
+        self.git('-c', 'commit.gpgsign=false', 'commit', '-qm', 'fixture M10D change')
+        result = runner.baseline('m10d')
+        self.assertIn('src/example', result['executable_committed_diff'])
+        self.assertEqual(result['orchestration_integrity'], 'PASS')
+        with self.assertRaisesRegex(RuntimeError, 'executable baseline differs'):
+            runner.baseline('m10b')
+
+    def test_clean_orchestration_passes_with_unrelated_dirty_docs(self):
+        (self.root / 'docs/note.md').write_text('documentation edit\n')
+        (self.root / 'docs/new.md').write_text('untracked documentation\n')
+        for phase in ['m10b', 'm10d']:
+            with self.subTest(phase=phase):
+                result = runner.baseline(phase)
+                self.assertEqual(result['orchestration_local_state'], '')
+                self.assertEqual(result['orchestration_integrity'], 'PASS')
 
 
 if __name__ == '__main__':
