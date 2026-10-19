@@ -7,6 +7,7 @@ import os
 import re
 import select
 import signal
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -181,10 +182,95 @@ def normalize_jmx(payload, port=8080):
     return result
 
 
+def select_java21(pinned_home=None):
+    """Resolve and verify a full JDK once, retaining absolute paths for the run."""
+    rejected = []
+
+    def verify(java, source):
+        result = subprocess.run([str(java), '-XshowSettings:properties', '-version'],
+                                text=True, capture_output=True, timeout=3)
+        output = result.stdout + result.stderr
+        feature = re.search(r'^\s*java.specification.version\s*=\s*(\d+)\s*$', output, re.M)
+        home = re.search(r'^\s*java.home\s*=\s*(.+?)\s*$', output, re.M)
+        if result.returncode or not feature or int(feature[1]) != 21 or not home:
+            raise ValueError(f'{java}: expected Java 21; detected {feature[1] if feature else "unknown"}')
+        actual_home = Path(home[1]).resolve()
+        javac = actual_home / 'bin/javac'
+        compiler = subprocess.run([str(javac), '-version'], text=True, capture_output=True, timeout=3)
+        if compiler.returncode or not re.search(r'\bjavac 21(?:[.\s]|$)', compiler.stdout + compiler.stderr):
+            raise ValueError(f'{javac}: expected javac 21')
+        return {'java_executable': str(actual_home / 'bin/java'), 'java_feature_version': 21,
+                'java_home': str(actual_home), 'javac_executable': str(javac),
+                'source': source, 'rejected_candidates': list(rejected)}
+
+    def attempt(java, source):
+        try:
+            return verify(java, source)
+        except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+            rejected.append(f'{source}: {error}')
+            return None
+
+    # A runner-pinned home must never silently fall back to another installation.
+    if pinned_home is not None:
+        selected = attempt(Path(pinned_home) / 'bin/java', 'runner-pinned')
+        if selected:
+            return selected
+    else:
+        if os.environ.get('JAVA_HOME'):
+            selected = attempt(Path(os.environ['JAVA_HOME']) / 'bin/java', 'JAVA_HOME')
+            if selected:
+                return selected
+        if sys.platform == 'darwin':
+            try:
+                result = subprocess.run(['/usr/libexec/java_home', '-v', '21'],
+                                        text=True, capture_output=True, timeout=3)
+                if result.returncode or not result.stdout.strip():
+                    raise ValueError(result.stderr.strip() or 'Java 21 not registered')
+                selected = attempt(Path(result.stdout.strip()) / 'bin/java', 'macOS java_home -v 21')
+                if selected:
+                    return selected
+            except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+                rejected.append(f'macOS java_home: {error}')
+        java = shutil.which('java')
+        if java:
+            selected = attempt(java, 'verified PATH')
+            if selected:
+                return selected
+        else:
+            rejected.append('PATH: java not found')
+    raise RuntimeError('No valid Java 21 JDK. Set JAVA_HOME to a full JDK 21. ' + '; '.join(rejected))
+
+
+def preflight(probe):
+    """Bounded readiness gate; never launches a workload or changes capacity."""
+    result = None
+    try:
+        probe.ensure_java()
+        with urllib.request.urlopen('http://localhost:8080/actuator/health', timeout=5) as response:
+            health = json.loads(response.read(65536))
+        if health.get('status') != 'UP':
+            raise RuntimeError(f'Backend health is not UP: {health}')
+        result = probe.sample()
+        missing = [field for field in JMX_FIELDS
+                   if field != 'tomcat_jmx_keep_alive_count' and result[field] is None]
+        if not result['tomcat_jmx']['ok'] or missing:
+            raise RuntimeError(result['tomcat_jmx'].get('error') or f'Missing JMX metrics: {missing}')
+        result['preflight'] = {'ok': True, 'health': health}
+        return result
+    except Exception as error:
+        if result is None:
+            result = jmx_unavailable(str(error), jdk=probe.jdk)
+        result['preflight'] = {'ok': False, 'error': f'{type(error).__name__}: {error}'}
+        print('M10C preflight failed: ' + result['preflight']['error'], file=sys.stderr, flush=True)
+        return result
+
+
 class JmxProbe:
     """One source-launched JDK helper/connection; hard pipe deadlines on macOS/Linux."""
-    def __init__(self, port=8080, startup_timeout=15, sample_timeout=3, retry_seconds=60):
+    def __init__(self, port=8080, startup_timeout=15, sample_timeout=3, retry_seconds=60, java_home=None):
         self.port = port
+        self.java_home = java_home
+        self.jdk = None
         self.startup_timeout = startup_timeout
         self.sample_timeout = sample_timeout
         self.retry_seconds = retry_seconds
@@ -213,9 +299,14 @@ class JmxProbe:
             self.stderr = None
         self.buffer = b''
 
+    def ensure_java(self):
+        if self.jdk is None:
+            self.jdk = select_java21(self.java_home)
+        return self.jdk
+
     def start(self, pid):
         self.pid = pid
-        java = str(Path(os.environ['JAVA_HOME']) / 'bin/java') if os.environ.get('JAVA_HOME') else 'java'
+        java = self.ensure_java()['java_executable']
         self.stderr = tempfile.TemporaryFile()
         self.process = subprocess.Popen([
             java, '--add-modules', 'jdk.attach',
@@ -249,7 +340,7 @@ class JmxProbe:
         try:
             if started < self.next_retry:
                 return jmx_unavailable(self.last_error, retry_in_seconds=round(self.next_retry - started, 3),
-                                       selected_pid=self.pid, helper_starts=self.starts, **metadata)
+                                       selected_pid=self.pid, helper_starts=self.starts, jdk=self.jdk, **metadata)
             discovery = run_command(['ps', '-ww', '-Ao', 'pid=,args='], timeout=3)
             if not discovery['ok']:
                 raise RuntimeError('PID discovery failed: ' + discovery['error'])
@@ -279,7 +370,7 @@ class JmxProbe:
             self.close()
             self.next_retry = time.monotonic() + self.retry_seconds
             result = jmx_unavailable(self.last_error)
-        result['tomcat_jmx'].update(metadata, helper_starts=self.starts,
+        result['tomcat_jmx'].update(metadata, jdk=self.jdk, helper_starts=self.starts,
                                     duration_seconds=round(time.monotonic() - started, 4))
         if not result['tomcat_jmx']['ok']:
             print('Tomcat JMX: ' + result['tomcat_jmx']['error'], file=sys.stderr, flush=True)
@@ -328,6 +419,8 @@ def safe_sample(probe=None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=Path)
+    parser.add_argument('--preflight', action='store_true', help='Require health and direct JMX before load')
+    parser.add_argument('--java-home', type=Path, help='Pin the preflight-selected JDK; no fallback')
     parser.add_argument('--jmx-once', action='store_true', help='Read JMX only; no workload')
     parser.add_argument('--jmx-port', type=int, default=8080)
     parser.add_argument('--interval', type=float, default=5)
@@ -336,7 +429,16 @@ def main():
         parser.error('--interval must be greater than zero')
     if not 1 <= args.jmx_port <= 65535:
         parser.error('--jmx-port must be between 1 and 65535')
-    probe = JmxProbe(port=args.jmx_port)
+    probe = JmxProbe(port=args.jmx_port, java_home=args.java_home)
+    if args.preflight:
+        if args.jmx_port != 8080:
+            parser.error('M10C preflight requires port 8080')
+        try:
+            result = preflight(probe)
+            print(json.dumps(result, indent=2))
+            return 0 if result['preflight']['ok'] else 1
+        finally:
+            probe.close()
     if args.jmx_once:
         try:
             result = probe.sample()

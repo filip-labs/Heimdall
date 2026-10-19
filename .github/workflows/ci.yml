@@ -96,7 +96,8 @@ jobs:
             scripts/m10b/tests/test_runner.py \
             scripts/m10c/collect.py \
             scripts/m10c/tests/test_collect.py \
-            scripts/m10c/tests/test_jmx.py
+            scripts/m10c/tests/test_jmx.py \
+            scripts/m10c/tests/test_preflight.py
 
       - name: Run tooling correctness tests (no benchmarks)
         run: |

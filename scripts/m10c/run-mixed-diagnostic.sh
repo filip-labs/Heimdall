@@ -11,7 +11,17 @@ STAMP="$(date -u +%Y-%m-%dT%H%M%SZ)"
 RESULT_DIR="$RESULT_ROOT/${STAMP}-${PROFILE}-mixed-diagnostic-run-${RUN_ID}"
 mkdir -p "$RESULT_DIR"
 
+# No k6 (including setup) until the same diagnostic path has passed preflight.
+if ! python3 -B scripts/m10c/collect.py --preflight \
+  >"$RESULT_DIR/preflight.json" 2>"$RESULT_DIR/preflight.log"; then
+  cat "$RESULT_DIR/preflight.log" >&2
+  printf 'M10C preflight failed; k6 was not started. Evidence: %s\n' "$RESULT_DIR" >&2
+  exit 1
+fi
+JMX_JAVA_HOME="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["tomcat_jmx"]["jdk"]["java_home"])' "$RESULT_DIR/preflight.json")"
+
 python3 -B scripts/m10c/collect.py \
+  --java-home "$JMX_JAVA_HOME" \
   --output "$RESULT_DIR/runtime-samples.jsonl" \
   --interval "${DIAGNOSTIC_SAMPLE_INTERVAL:-5}" \
   >"$RESULT_DIR/collector.log" 2>&1 &

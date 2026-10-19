@@ -194,9 +194,9 @@ class LocalAttachTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temp = tempfile.TemporaryDirectory(prefix='m10c-jmx-test-')
         cls.addClassCleanup(cls.temp.cleanup)
-        java_home = os.environ.get('JAVA_HOME')
-        cls.java = str(Path(java_home) / 'bin/java') if java_home else 'java'
-        javac = str(Path(java_home) / 'bin/javac') if java_home else 'javac'
+        jdk = collect.select_java21()
+        cls.java = jdk['java_executable']
+        javac = jdk['javac_executable']
         subprocess.run([javac, '--add-modules', 'jdk.attach', '-d', cls.temp.name,
             str(Path(collect.__file__).with_name('TomcatJmxProbe.java')),
             str(Path(__file__).with_name('JmxFixture.java'))], check=True, capture_output=True, timeout=30)

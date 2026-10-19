@@ -87,13 +87,13 @@ Send the entire new result directory, plus:
 The next engineering review decides whether retry amplification materially changes the failure and
 which backend hypothesis deserves the first controlled experiment. No tuning follows automatically.
 
-## Phase 2: direct local Tomcat JMX (next run 5102)
+## Phase 2: direct local Tomcat JMX (completed run 5102)
 
 Phase 1 run **5101** resolved exactly 8,192 of 10,000 VUs; 1,808 exhausted resolution
 (13,616 attempts, 5,424 failures, 3,616 retries). Achieved heartbeat/poll rates were about
 269.32/404.48 requests/sec. Hikari reached active=10/10 and pending=22 in one observation;
 40/77 HTTP scrapes timed out. The 100 late Tomcat/NIO errors were during ramp-down.
-No Tomcat connection count was captured. The 8,192 connection-boundary hypothesis remains
+No Tomcat connection count was captured in 5101. At that stage the 8,192 connection-boundary hypothesis was
 **SUPPORTED BUT NOT CONFIRMED**. A single Hikari spike does not establish persistent pool saturation.
 
 ### Instrumentation and evidence
@@ -159,10 +159,10 @@ Docker calls reduce sample density. JMX has its own timestamp and elapsed time; 
 of HTTP transport, but is not an independent fixed-frequency sampler. JVM pauses/OS exhaustion can
 also delay JMX. There is no claim of zero observer overhead or proof of a boundary from gaps alone.
 
-### Future procedure — not executed by this implementation
+### Archived 5102 procedure
 
-**Do not run this as part of the implementation task.** Run 5102 only as a separately authorized
-local diagnostic experiment. Preserve run 5101 evidence and its backend log first. Stop the old
+**Run 5102 is complete; do not rerun or overwrite its evidence.** The commands below record its
+original procedure. For the next experiment use Phase 3 below. Preserve run 5101 evidence and its backend log first. Stop the old
 backend and other experiments; prepare the same fresh disposable Compose database state as 5101
 using the Phase 1 reset procedure above (it deletes the local Compose volume).
 
@@ -205,7 +205,7 @@ connection/thread observations with resolve attempts/exhaustion and the k6 ramp/
 especially samples with `prometheus_error`. Check JMX success/coverage, runtime maximum,
 selected connector and unavailable attributes before making a saturation claim.
 
-### Future 5102 decision rules
+### 5102 decision rules
 
 - **A — Connection boundary:** connections approach/plateau near 8,192, observed runtime
   maxConnections is 8,192, and resolution exhaustion occurs during that plateau:
@@ -234,3 +234,139 @@ M10C tests compile the helper and a JDK-only idle fixture into a temporary direc
 local Attach/JMX with quoted MBeans and two ports, verify connection/agent reuse, and clean up their
 processes. They never launch Heimdall or generate application traffic/data. The tooling CI job
 provides Java 21 and runs these tests without skipping Attach coverage.
+
+## Phase 3: controlled connection-limit experiment (5103, NOT executed)
+
+### 5102 findings
+
+Run 5102 had 10,000 maximum VUs, 8,191 successful vehicle resolves and 1,809 exhausted VUs.
+There were 13,618 resolve attempts, 5,427 failures and 3,618 retries: exactly
+`1809 × 3 = 5427` failed attempts and `1809 × 2 = 3618` retries. It recorded 220,990
+successful heartbeats and 328,965 successful polls, approximately 0.95% global HTTP failures,
+global p99 approximately 4.62 seconds, and k6 exit code 0. Exit code 0 does not mean the full
+intended fleet established its workload.
+
+The pre-load direct JMX check reported maxConnections=8192, maxThreads=200, connections near
+idle=2 and busy threads=0. During ramp-up, Micrometer recorded connections around 8077 with
+busy threads around 1, maxThreads=200 and Hikari pending=0 before/around the onset of overload.
+Later connection samples reached 8192; k6 reported `dial: i/o timeout` on vehicle resolution.
+Busy threads did not approach 200 at the connection boundary. Resolution counts nearly repeat
+5101 (8192 resolved/1808 exhausted versus 8191/1809).
+
+Direct JMX **during** 5102 failed with `Use Java 21 for this experiment`; it must not be cited
+as successful in-run direct JMX evidence. The preflight and Micrometer evidence nevertheless make
+the 8192 connection-boundary hypothesis **STRONGLY SUPPORTED**, not mathematically proven.
+The controlled experiment below tests its causal significance.
+
+### Java mismatch and deterministic selection
+
+The old launcher selected `$JAVA_HOME/bin/java` without checking its version, otherwise plain
+`java` from PATH. The shell runner did not modify JAVA_HOME or PATH: Python and its helper inherited
+the workload terminal's environment, independently of the already-running backend. Source-file
+execution compiles and executes inside that selected Java launcher; it does not call a different
+PATH `javac`. The helper's guard checked its own runtime, not the target backend runtime.
+
+5102 process evidence shows the backend using the explicit OpenJDK 21 installation, while the
+helper guard proves its own runtime was not 21. At investigation time JAVA_HOME was unset and
+`/usr/bin/java -version` selected OpenJDK 24.0.1, reproducing the unsafe fallback condition.
+The historical helper path/environment was not recorded, so whether JAVA_HOME was missing or
+pointing to another JDK in that specific terminal cannot be established retrospectively.
+
+The collector now verifies a full JDK in this order:
+
+1. JAVA_HOME when its runtime and compiler are Java 21.
+2. On macOS, `/usr/libexec/java_home -v 21`, with both executables verified.
+3. PATH Java only after verifying feature version 21 and its own installation's javac 21.
+4. Otherwise report a useful error; never silently use a different Java feature version.
+
+Each version command has a three-second timeout. The selected runtime's absolute `java.home/bin/java`
+and sibling `javac` paths, feature version, selection source and rejected candidates are recorded
+under `tomcat_jmx.jdk`. The source helper does not invoke javac, but its availability/version proves
+that the selected installation is a full JDK. Selection is cached, not repeated every sample.
+The helper's own Java 21 guard remains unchanged.
+
+### Mandatory runner preflight
+
+Before starting the background collector or any k6 setup/traffic, the runner invokes
+`collect.py --preflight`. It requires Java 21, HTTP health status UP (five-second HTTP timeout),
+a unique Heimdall PID, successful direct JMX for the connector on port 8080 and all five
+non-optional connection/thread metrics, including maxConnections and maxThreads. Keep-alive may
+be unavailable. Existing PID/JMX/cleanup deadlines remain in force; the checks do not retry forever.
+Failures print the reason and exit nonzero **without starting k6**.
+
+`preflight.json` and `preflight.log` are retained in the new result directory. The runner passes
+the selected JDK home explicitly to the background collector via `--java-home`; a pinned JDK
+is revalidated and cannot fall back to another installation. Both preflight and regular sampling
+record the selected Java paths/version. After startup, sample failures remain fail-soft and all
+HTTP, Tomcat Micrometer, JMX, Hikari, process, PostgreSQL and container evidence is preserved.
+The gate verifies current readiness; it cannot guarantee that the backend stays healthy afterward.
+
+### Exact future 5103 procedure
+
+**Do not execute 5103 as part of this preparation task.** Preserve 5101 and 5102 result directories
+and backend logs unchanged. Stop the previous backend, and prepare the same fresh disposable
+Compose/database state used for 5102 before this future experiment. The only capacity variable
+changed from 5102 is **Tomcat maxConnections: 8192 → 12000**. No maxThreads, Hikari, DB, Kafka,
+heap/GC or macOS settings change. MBean registry remains enabled as it was in 5102.
+
+Property verification: the project's resolved Spring Boot 4.1.1 `spring-boot-tomcat` JAR configuration
+metadata declares `server.tomcat.max-connections` (Integer, default 8192) and
+`server.tomcat.mbeanregistry.enabled` (Boolean, default false). The matching Maven plugin descriptor
+binds `spring-boot.run.arguments` to its command-line argument string; quoting the entire two-argument
+value below passes both application flags. Neither property is added to `application.yml`.
+
+Terminal 1:
+
+```bash
+cd /Users/filip_macbook/heimdall
+export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+export PATH="$JAVA_HOME/bin:$PATH"
+./mvnw spring-boot:run \
+  -Dspring-boot.run.arguments="--server.tomcat.mbeanregistry.enabled=true --server.tomcat.max-connections=12000" \
+  2>&1 | tee /tmp/heimdall-m10c-5103-backend.log
+```
+
+Wait for backend readiness. Before starting the future workload, use
+`python3 -B scripts/m10c/collect.py --preflight` to inspect actual maxConnections=12000 and
+maxThreads=200. Stop and investigate if either differs. This manual check does not replace the
+runner's automatic gate. The generic runner checks readable limits, not a hardcoded capacity value.
+
+Terminal 2 (same workload parameters as 5102; automatic preflight is included):
+
+```bash
+cd /Users/filip_macbook/heimdall
+export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+export PATH="$JAVA_HOME/bin:$PATH"
+PROFILE=5000 RUN_ID=5103 \
+RAMP_UP=5m STEADY_DURATION=10m RAMP_DOWN=1m SETUP_TIMEOUT=10m \
+HEARTBEAT_INTERVAL=15s POLL_INTERVAL=10s \
+DIAGNOSTIC_RESOLVE_MAX_ATTEMPTS=3 \
+DIAGNOSTIC_RESOLVE_BACKOFF=5s \
+scripts/m10c/run-mixed-diagnostic.sh
+```
+
+### 5103 comparison and interpretation
+
+Compare against 5102 with identical workload parameters and matching time windows:
+
+- Preflight maxConnections=12000, maxThreads=200; successful direct JMX coverage during load.
+- Connection counts able to exceed 8192, and their relationship to resolution failures over time.
+- Resolved VUs increasing substantially toward 10000; exhausted VUs falling substantially from 1809.
+- Dial/connect timeouts falling substantially; retain attempts, failures and retries by scenario.
+- Heartbeat/poll cadence approaching the intended full-fleet steady rates (about 333.33/500 requests/sec),
+  with HTTP failure rates, p95/p99 and dropped iterations retained. Whole-run totals include ramps
+  and cannot substitute for steady-window comparisons.
+
+Perfect zero failures is not required. If connections exceed 8192, resolved VUs rise close to 10000
+and exhausted VUs collapse while all other workload settings are identical, classify:
+**Tomcat maxConnections was a confirmed material bottleneck**. This does not establish that it
+is the only remaining bottleneck.
+
+If more connections expose busyThreads ≈ maxThreads, investigate worker threads next. If Hikari
+active remains 10 and pending grows persistently, investigate the DB pool next. If connections
+exceed 8192 but resolution exhaustion remains high without a thread/Hikari boundary, investigate
+OS/socket behavior next. Do not tune any of these in this task.
+
+Tests additionally cover Java selection/fallback on mocked macOS/Linux environments, wrong/missing
+JDKs, health/JMX gate failures and shell-runner ordering with fake executables. No runner test invokes
+real k6. Existing real JDK Attach fixture tests and collector failure tests remain enabled in CI.
