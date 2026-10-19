@@ -24,6 +24,18 @@ resolve waits for `DIAGNOSTIC_RESOLVE_BACKOFF` and can be attempted at most
 heartbeat/poll cadence and never tight-loops. Custom counters report attempts, failures, retries,
 and exhausted VUs, tagged only by the bounded scenario name.
 
+### Interpretation rule
+
+The diagnostic workload prevents resolution retry amplification, but VUs that exhaust their
+resolution attempts no longer generate normal heartbeat or polling requests. An apparent
+performance improvement is directly comparable to the original 5,000 mixed workload only when
+resolution exhaustion is zero or negligible. If significant VUs are exhausted, the run still
+demonstrates retry-amplification behavior, but it is not an identical offered-load capacity result.
+
+Before interpreting heartbeat/poll throughput, engineering review must examine
+`m10c_vehicle_resolve_attempts`, `m10c_vehicle_resolve_failures`,
+`m10c_vehicle_resolve_retries`, and `m10c_vehicle_resolve_exhausted`.
+
 The original `load-tests/k6/mixed-fleet.js` remains the M10B baseline and is not changed.
 
 ## macOS experiment
@@ -38,7 +50,7 @@ git switch m10c-phase1-diagnostics
 docker compose -p heimdall down -v
 docker compose -p heimdall up -d
 docker compose -p heimdall exec postgres pg_isready -U heimdall -d heimdall
-./mvnw spring-boot:run
+./mvnw spring-boot:run 2>&1 | tee /tmp/heimdall-m10c-5101-backend.log
 ```
 
 Wait until `curl --fail http://localhost:8080/actuator/health` succeeds. Terminal 2:
@@ -54,11 +66,16 @@ scripts/m10c/run-mixed-diagnostic.sh
 Do not rerun or overwrite the original M10B evidence. Compare its report with the new directory
 under `load-tests/results/m10c/`.
 
+Preserve `/tmp/heimdall-m10c-5101-backend.log` together with the generated result directory. The
+diagnostic runner intentionally does not own or stop the Spring Boot process.
+
 ## Evidence to return
 
 Send the entire new result directory, plus:
 
 - `k6-summary.json`, `k6-console.log`, `k6-exit-code.txt`, and `git-sha.txt`;
+- `collector.log` and `collector-status.txt`, including an unexpected early collector exit;
+- `/tmp/heimdall-m10c-5101-backend.log`;
 - counts for `m10c_vehicle_resolve_attempts`, `failures`, `retries`, and `exhausted` by scenario;
 - heartbeat and `deployment_poll` achieved rates, p95/p99, failures, and dropped iterations;
 - `runtime-samples.jsonl`, including every Prometheus scrape timeout;

@@ -13,11 +13,14 @@ mkdir -p "$RESULT_DIR"
 
 python3 -B scripts/m10c/collect.py \
   --output "$RESULT_DIR/runtime-samples.jsonl" \
-  --interval "${DIAGNOSTIC_SAMPLE_INTERVAL:-5}" &
+  --interval "${DIAGNOSTIC_SAMPLE_INTERVAL:-5}" \
+  >"$RESULT_DIR/collector.log" 2>&1 &
 COLLECTOR_PID=$!
 cleanup() {
-  kill "$COLLECTOR_PID" 2>/dev/null || true
-  wait "$COLLECTOR_PID" 2>/dev/null || true
+  if [[ -n "${COLLECTOR_PID:-}" ]]; then
+    kill "$COLLECTOR_PID" 2>/dev/null || true
+    wait "$COLLECTOR_PID" 2>/dev/null || true
+  fi
 }
 trap cleanup EXIT INT TERM
 
@@ -41,6 +44,24 @@ env \
     2>&1 | tee "$RESULT_DIR/k6-console.log"
 K6_STATUS=${PIPESTATUS[0]}
 set -e
+
+if kill -0 "$COLLECTOR_PID" 2>/dev/null; then
+  kill "$COLLECTOR_PID" 2>/dev/null || true
+  set +e
+  wait "$COLLECTOR_PID"
+  COLLECTOR_STATUS=$?
+  set -e
+  printf 'stopped after workload; exit code %s\n' "$COLLECTOR_STATUS" \
+    > "$RESULT_DIR/collector-status.txt"
+else
+  set +e
+  wait "$COLLECTOR_PID"
+  COLLECTOR_STATUS=$?
+  set -e
+  printf 'exited before workload completed; exit code %s\n' "$COLLECTOR_STATUS" \
+    > "$RESULT_DIR/collector-status.txt"
+fi
+COLLECTOR_PID=''
 
 printf '%s\n' "$K6_STATUS" > "$RESULT_DIR/k6-exit-code.txt"
 git rev-parse HEAD > "$RESULT_DIR/git-sha.txt"

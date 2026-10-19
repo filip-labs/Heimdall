@@ -1,6 +1,8 @@
 import importlib.util
 from pathlib import Path
+import subprocess
 import unittest
+from unittest.mock import patch
 
 
 PATH = Path(__file__).resolve().parents[1] / 'collect.py'
@@ -27,11 +29,35 @@ unrelated_metric{vin="high-cardinality"} 99
         self.assertIn('tomcat_threads_config_max_threads', collect.TOMCAT_PREFIXES)
 
     def test_process_capture_excludes_unrelated_commands(self):
-        output = 'PID PPID %CPU COMMAND\n1 0 4.0 python unrelated.py\n2 1 99.0 java HeimdallApplication\n3 1 80.0 k6 run diagnostic.js'
+        output = 'PID PPID %CPU %MEM RSS COMMAND\n1 0 4.0 0.1 10 python unrelated.py\n2 1 99.0 2.0 100 java HeimdallApplication\n3 1 80.0 1.0 50 k6 run diagnostic.js'
         selected = collect.relevant_processes(output)
         self.assertNotIn('unrelated.py', selected)
         self.assertIn('HeimdallApplication', selected)
         self.assertIn('k6 run', selected)
+
+    def test_failed_observation_is_structured_and_does_not_raise(self):
+        with patch.object(collect.subprocess, 'run', side_effect=OSError('ps unavailable')):
+            result = collect.run_command(['ps', '-Ao', 'pid,command'])
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['command'], ['ps', '-Ao', 'pid,command'])
+        self.assertEqual(result['error_type'], 'OSError')
+        self.assertIn('ps unavailable', result['error'])
+
+    def test_timeout_is_preserved_as_structured_evidence(self):
+        timeout = subprocess.TimeoutExpired(['docker', 'stats'], 10, output='partial', stderr='slow')
+        with patch.object(collect.subprocess, 'run', side_effect=timeout):
+            result = collect.run_command(['docker', 'stats'])
+        self.assertFalse(result['ok'])
+        self.assertTrue(result['timed_out'])
+        self.assertEqual(result['error_type'], 'TimeoutExpired')
+        self.assertEqual(result['stdout'], 'partial')
+        self.assertEqual(result['stderr'], 'slow')
+
+    def test_unexpected_sample_failure_is_fail_soft(self):
+        with patch.object(collect, 'sample', side_effect=RuntimeError('observation failed')):
+            result = collect.safe_sample()
+        self.assertEqual(result['collector_error_type'], 'RuntimeError')
+        self.assertIn('observation failed', result['collector_error'])
 
 
 if __name__ == '__main__':

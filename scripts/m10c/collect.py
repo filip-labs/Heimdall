@@ -46,10 +46,33 @@ def select_metrics(payload):
     return result
 
 
-def run_command(args):
-    result = subprocess.run(args, text=True, capture_output=True, timeout=10)
-    return {'command': args, 'returncode': result.returncode,
-            'stdout': result.stdout.strip(), 'stderr': result.stderr.strip()}
+def output_text(value):
+    if value is None:
+        return ''
+    return value.decode('utf-8', errors='replace') if isinstance(value, bytes) else str(value)
+
+
+def run_command(args, timeout=10):
+    evidence = {'command': args, 'timeout_seconds': timeout}
+    try:
+        result = subprocess.run(args, text=True, capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        evidence.update(ok=False, timed_out=True, error_type=type(error).__name__,
+                        error=f'command timed out after {timeout} seconds',
+                        stdout=output_text(error.stdout).strip(),
+                        stderr=output_text(error.stderr).strip())
+        return evidence
+    except OSError as error:
+        evidence.update(ok=False, timed_out=False, error_type=type(error).__name__,
+                        error=str(error), stdout='', stderr='')
+        return evidence
+
+    evidence.update(ok=result.returncode == 0, timed_out=False,
+                    returncode=result.returncode, stdout=result.stdout.strip(),
+                    stderr=result.stderr.strip())
+    if result.returncode:
+        evidence['error'] = f'command exited with status {result.returncode}'
+    return evidence
 
 
 def relevant_processes(output):
@@ -86,12 +109,18 @@ def sample():
         'docker', 'stats', '--no-stream', '--format', '{{json .}}',
         'heimdall-postgres', 'heimdall-kafka', 'heimdall-prometheus', 'heimdall-grafana',
     ])
-    processes = run_command([
-        'ps', '-Ao', 'pid,ppid,%cpu,%mem,rss,nlwp,command',
-    ])
+    processes = run_command(['ps', '-Ao', 'pid,ppid,%cpu,%mem,rss,command'])
     processes['stdout'] = relevant_processes(processes['stdout'])
     entry['processes'] = processes
     return entry
+
+
+def safe_sample():
+    try:
+        return sample()
+    except Exception as error:  # one unexpected observation must not end the collector
+        return {'timestamp': utc_now(), 'collector_error_type': type(error).__name__,
+                'collector_error': str(error)}
 
 
 def main():
@@ -104,7 +133,7 @@ def main():
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open('a', buffering=1) as output:
         while True:
-            output.write(json.dumps(sample(), separators=(',', ':')) + '\n')
+            output.write(json.dumps(safe_sample(), separators=(',', ':')) + '\n')
             time.sleep(args.interval)
 
 
