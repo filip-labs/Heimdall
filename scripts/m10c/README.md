@@ -86,3 +86,151 @@ Send the entire new result directory, plus:
 
 The next engineering review decides whether retry amplification materially changes the failure and
 which backend hypothesis deserves the first controlled experiment. No tuning follows automatically.
+
+## Phase 2: direct local Tomcat JMX (next run 5102)
+
+Phase 1 run **5101** resolved exactly 8,192 of 10,000 VUs; 1,808 exhausted resolution
+(13,616 attempts, 5,424 failures, 3,616 retries). Achieved heartbeat/poll rates were about
+269.32/404.48 requests/sec. Hikari reached active=10/10 and pending=22 in one observation;
+40/77 HTTP scrapes timed out. The 100 late Tomcat/NIO errors were during ramp-down.
+No Tomcat connection count was captured. The 8,192 connection-boundary hypothesis remains
+**SUPPORTED BUT NOT CONFIRMED**. A single Hikari spike does not establish persistent pool saturation.
+
+### Instrumentation and evidence
+
+`collect.py` starts one persistent Java 21 source-file helper, `TomcatJmxProbe.java`, using only
+JDK Attach/JMX APIs. It discovers the actual `dev.heimdall.HeimdallApplication` Java process with
+macOS/Linux `ps`, excludes Maven launchers, and refuses zero/multiple candidates. The helper
+also verifies `sun.java.command` before starting management, protecting against a wrong/reused PID.
+This discovery supports the documented `spring-boot:run` main-class launch; packaged `java -jar`
+launches are deliberately unsupported rather than guessed.
+
+The helper attaches once, reuses an existing local management connector or starts the JDK local
+management agent once, detaches the Attach handle, and retains the JMX connection. No remote JMX
+port is configured and no server capacity attribute is written. The local agent remains in the
+backend until that JVM exits. Run the collector as the same OS user, with a full Java 21 JDK and
+Attach enabled. See the [JDK Attach API](https://docs.oracle.com/en/java/javase/21/docs/api/jdk.attach/com/sun/tools/attach/VirtualMachine.html#startLocalManagementAgent()).
+
+Every sample dynamically queries ThreadPool, Connector, and ProtocolHandler MBeans across domains
+and discovers readable attributes with MBeanInfo. ObjectName handles quoting. The selected
+ThreadPool endpoint must uniquely match port 8080 (`--jmx-port` can override this in the collector).
+Selection uses `localPort`, then `port` if absent, then a protocol-name port suffix only if both
+attributes are absent. The exact source, all candidates, raw values, attribute errors and available
+attribute names are retained. Two endpoints matching the same port are ambiguous, even if they
+use different interfaces: no endpoint is silently picked or aggregated.
+
+Each JSONL sample adds:
+
+| Stable field | Discovered ThreadPool attribute |
+|---|---|
+| `tomcat_jmx_connection_count` | `connectionCount` |
+| `tomcat_jmx_max_connections` | `maxConnections` |
+| `tomcat_jmx_keep_alive_count` | `keepAliveCount` |
+| `tomcat_jmx_current_threads` | `currentThreadCount` |
+| `tomcat_jmx_busy_threads` | `currentThreadsBusy` |
+| `tomcat_jmx_max_threads` | `maxThreads` |
+
+`tomcat_jmx` holds success/error, selected PID, PID candidates, selected MBean/connector,
+raw helper evidence, unavailable attributes, timestamp, elapsed seconds, helper start count and
+timeout settings. Missing/non-numeric/negative sentinel attributes become `null`; raw sentinel
+values remain in metadata. Partial availability is reported explicitly; `ok=true` means at least
+one metric was read, not that every metric is available. Never treat a missing limit as 8,192.
+The endpoint descriptors in the locally resolved Tomcat 11.0.24 JAR expose these six attributes;
+a separate idle Tomcat 11.0.24 fixture on an ephemeral loopback port also exposed all six via
+real Attach/JMX. No Heimdall, application data or HTTP load was used for that validation. The fixture
+reported connectionCount=1, maxConnections=8192, keepAliveCount=0, currentThreadCount=10,
+currentThreadsBusy=0 and maxThreads=200. These are fixture observations, not run 5102 evidence.
+Tomcat's endpoint counter can include an in-progress accept reservation; do not equate it exactly
+with established OS sockets. Future backend availability still must be checked with the registry enabled.
+
+JMX is read **before** Actuator, so an HTTP timeout cannot erase its evidence. The first response
+has a 15-second deadline (including source compilation, Attach and connect); subsequent responses
+have a 3-second deadline. PID discovery has a 3-second timeout. Timeout/transport/malformed-output
+failures terminate and reap the helper (at most two additional seconds for cleanup), record nulls,
+and back off 60 seconds before retrying. An absent MBean does not restart a healthy helper.
+A retry reuses the target's management agent. SIGTERM/SIGINT close the helper while preserving
+collector exit status 143/130 and the runner's existing `collector-status.txt` behavior.
+Errors appear both in JSONL and `collector.log`. All existing HTTP, process, Hikari, PostgreSQL and
+container evidence remains enabled.
+
+The helper compiles once per lifetime, not per sample; only small JMX reads occur during normal
+sampling. The existing loop still sleeps five seconds **after** its observations, so slow HTTP or
+Docker calls reduce sample density. JMX has its own timestamp and elapsed time; it is independent
+of HTTP transport, but is not an independent fixed-frequency sampler. JVM pauses/OS exhaustion can
+also delay JMX. There is no claim of zero observer overhead or proof of a boundary from gaps alone.
+
+### Future procedure — not executed by this implementation
+
+**Do not run this as part of the implementation task.** Run 5102 only as a separately authorized
+local diagnostic experiment. Preserve run 5101 evidence and its backend log first. Stop the old
+backend and other experiments; prepare the same fresh disposable Compose database state as 5101
+using the Phase 1 reset procedure above (it deletes the local Compose volume).
+
+Terminal 1 — backend, Java 21, registry enabled only for this process:
+
+```bash
+cd /Users/filip_macbook/heimdall
+git switch m10c-phase1-diagnostics
+export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+export PATH="$JAVA_HOME/bin:$PATH"
+./mvnw spring-boot:run \
+  -Dspring-boot.run.arguments=--server.tomcat.mbeanregistry.enabled=true \
+  2>&1 | tee /tmp/heimdall-m10c-5102-backend.log
+```
+
+Wait for `curl --fail http://localhost:8080/actuator/health` to succeed. No `maxConnections`,
+`maxThreads`, Hikari, JVM memory/GC or OS settings are overridden.
+
+Terminal 2 — preflight (JMX only) followed by the future diagnostic workload:
+
+```bash
+cd /Users/filip_macbook/heimdall
+export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+export PATH="$JAVA_HOME/bin:$PATH"
+python3 -B scripts/m10c/collect.py --jmx-once && \
+PROFILE=5000 RUN_ID=5102 \
+RAMP_UP=5m STEADY_DURATION=10m RAMP_DOWN=1m SETUP_TIMEOUT=10m \
+HEARTBEAT_INTERVAL=15s POLL_INTERVAL=10s \
+DIAGNOSTIC_RESOLVE_MAX_ATTEMPTS=3 DIAGNOSTIC_RESOLVE_BACKOFF=5s \
+scripts/m10c/run-mixed-diagnostic.sh
+```
+
+Preflight returns nonzero unless all five non-optional metrics are available, and displays actual
+PID, MBeans and runtime limits for review. Missing keep-alive is permitted. If preflight fails,
+inspect its error and backend startup before running load. A preflight may start the local agent;
+the regular collector then reuses it. Do not bypass a failure by assuming defaults.
+
+Return the complete result directory and `/tmp/heimdall-m10c-5102-backend.log`. Align direct
+connection/thread observations with resolve attempts/exhaustion and the k6 ramp/steady/down timeline,
+especially samples with `prometheus_error`. Check JMX success/coverage, runtime maximum,
+selected connector and unavailable attributes before making a saturation claim.
+
+### Future 5102 decision rules
+
+- **A — Connection boundary:** connections approach/plateau near 8,192, observed runtime
+  maxConnections is 8,192, and resolution exhaustion occurs during that plateau:
+  **8192 connection-boundary hypothesis => STRONGLY SUPPORTED**. The next separately reviewed
+  experiment may change only maxConnections. This implementation does not do that experiment.
+- **B — Worker threads:** connections stay materially below 8,192 while busy threads approach
+  maxThreads: investigate worker-thread saturation next.
+- **C — Pool pressure:** connections stay below the suspected limit while Hikari is persistently
+  saturated with pending waiters: database connection-pool pressure becomes the stronger candidate.
+- **D — OS/network:** JMX shows no connection/thread boundary while OS/socket evidence dominates:
+  investigate macOS/network limits separately. Missing JMX data is inconclusive, not proof of D.
+
+### Bounded correctness checks (no benchmark)
+
+```bash
+export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+export PATH="$JAVA_HOME/bin:$PATH"
+bash -n scripts/m10b/run.sh scripts/m10b/scenario.sh scripts/m10c/run-mixed-diagnostic.sh
+python3 -m py_compile scripts/m10c/collect.py scripts/m10c/tests/test_collect.py scripts/m10c/tests/test_jmx.py
+python3 -B -m unittest discover -s scripts/m10c/tests -v
+python3 -B -m unittest discover -s scripts/m10b/tests -v
+npm --prefix load-tests test
+```
+
+M10C tests compile the helper and a JDK-only idle fixture into a temporary directory, exercise real
+local Attach/JMX with quoted MBeans and two ports, verify connection/agent reuse, and clean up their
+processes. They never launch Heimdall or generate application traffic/data. The tooling CI job
+provides Java 21 and runs these tests without skipping Attach coverage.

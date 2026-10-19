@@ -63,6 +63,12 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
+      - name: Set up Java 21 for local JMX fixture tests
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -89,7 +95,8 @@ jobs:
             scripts/m10b/analyze.py \
             scripts/m10b/tests/test_runner.py \
             scripts/m10c/collect.py \
-            scripts/m10c/tests/test_collect.py
+            scripts/m10c/tests/test_collect.py \
+            scripts/m10c/tests/test_jmx.py
 
       - name: Run tooling correctness tests (no benchmarks)
         run: |
