@@ -129,7 +129,7 @@ class PreflightTests(unittest.TestCase):
 
 
 class RunnerGateTests(unittest.TestCase):
-    def run_stubbed(self, preflight_ok):
+    def run_stubbed(self, preflight_ok, jfr=False, jfr_ok=True, k6_status=0):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             scripts = root / 'scripts/m10c'
@@ -142,7 +142,17 @@ class RunnerGateTests(unittest.TestCase):
 from pathlib import Path
 args = sys.argv[1:]
 with open('calls.jsonl', 'a') as out: out.write(json.dumps(args) + '\\n')
-if '--preflight' in args:
+if any(a.endswith('/jfr.py') for a in args):
+    directory = Path(args[args.index('--result-dir') + 1])
+    mode = args[args.index('--result-dir') - 1]
+    if mode == 'start':
+        (directory / 'jfr-start.log').write_text('scheduled' if os.environ['JFR_OK'] == '1' else 'rejected')
+        (directory / 'jfr-status.json').write_text('{}')
+        if os.environ['JFR_OK'] != '1': sys.exit(1)
+    elif mode == 'finish':
+        (directory / 'jfr-check-after.log').write_text('finished')
+        (directory / 'm10c-5104-steady.jfr').write_bytes(b'fixture only')
+elif '--preflight' in args:
     if os.environ['PREFLIGHT_OK'] != '1':
         print('test: Java/JMX preflight failed', file=sys.stderr)
         sys.exit(1)
@@ -155,35 +165,50 @@ else:
 ''')
             python.chmod(0o755)
             k6 = bin_dir / 'k6'
-            k6.write_text(f'#!{sys.executable}\nimport time\nfrom pathlib import Path\nPath("k6-started").touch()\ntime.sleep(0.2)\n')
+            k6.write_text(f'#!{sys.executable}\nimport time, os, sys\nfrom pathlib import Path\nPath("k6-started").touch()\ntime.sleep(0.2)\nsys.exit(int(os.environ["K6_STATUS"]))\n')
             k6.chmod(0o755)
             git = bin_dir / 'git'
             git.write_text('#!/bin/sh\nexit 0\n')
             git.chmod(0o755)
             env = {**os.environ, 'PATH': str(bin_dir) + os.pathsep + os.environ['PATH'],
-                   'RUN_ID': '9999', 'RESULT_ROOT': str(root / 'results'),
+                   'RUN_ID': '5104' if jfr else '9999', 'JFR_OK': '1' if jfr_ok else '0', 'K6_STATUS': str(k6_status), 'RESULT_ROOT': str(root / 'results'),
                    'PREFLIGHT_OK': '1' if preflight_ok else '0'}
             result = subprocess.run(['bash', str(scripts / 'run-mixed-diagnostic.sh')],
                                     cwd=root, env=env, text=True, capture_output=True, timeout=10)
             calls = [json.loads(x) for x in (root / 'calls.jsonl').read_text().splitlines()]
-            if preflight_ok:
-                self.assertEqual(result.returncode, 0, result.stderr)
+            if preflight_ok and jfr_ok:
+                self.assertEqual(result.returncode, k6_status, result.stderr)
                 self.assertTrue((root / 'k6-started').exists())
                 collector = next(c for c in calls if '--output' in c)
                 self.assertEqual(collector[collector.index('--java-home') + 1], '/verified/jdk21')
                 self.assertIn('143', next((root / 'results').glob('*/collector-status.txt')).read_text())
+                if jfr:
+                    modes = [c[c.index('--result-dir') - 1] for c in calls if '--result-dir' in c]
+                    self.assertEqual(modes, ['start', 'launch', 'finish'])
+                    directory = next((root / 'results').iterdir())
+                    self.assertEqual((directory / 'k6-exit-code.txt').read_text().strip(), str(k6_status))
+                    self.assertTrue((directory / 'm10c-5104-steady.jfr').stat().st_size)
+                    self.assertTrue((directory / 'jfr-start.log').exists())
             else:
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIn('k6 was not started', result.stderr)
+                if not preflight_ok:
+                    self.assertIn('k6 was not started', result.stderr)
                 self.assertFalse((root / 'k6-started').exists())
                 self.assertFalse((root / 'collector-started').exists())
-                self.assertEqual(len(calls), 1)
+                if not preflight_ok:
+                    self.assertEqual(len(calls), 1)
 
     def test_failed_preflight_never_starts_k6(self):
         self.run_stubbed(False)
 
     def test_success_pins_java_before_starting_workload_stub(self):
         self.run_stubbed(True)
+
+    def test_jfr_failure_prevents_workload(self):
+        self.run_stubbed(True, jfr=True, jfr_ok=False)
+
+    def test_jfr_success_preserves_threshold_99_and_evidence(self):
+        self.run_stubbed(True, jfr=True, k6_status=99)
 
 
 if __name__ == '__main__':

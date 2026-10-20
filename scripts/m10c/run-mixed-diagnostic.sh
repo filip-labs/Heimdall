@@ -9,7 +9,16 @@ PROFILE="${PROFILE:-5000}"
 RESULT_ROOT="${RESULT_ROOT:-load-tests/results/m10c}"
 STAMP="$(date -u +%Y-%m-%dT%H%M%SZ)"
 RESULT_DIR="$RESULT_ROOT/${STAMP}-${PROFILE}-mixed-diagnostic-run-${RUN_ID}"
-mkdir -p "$RESULT_DIR"
+mkdir -p "$RESULT_ROOT"
+if [[ "$RUN_ID" == 5104 ]]; then
+  for previous in "$RESULT_ROOT"/*-mixed-diagnostic-run-5104; do
+    if [[ -d "$previous" ]]; then
+      printf 'RUN_ID=5104 already has evidence: %s; use a fresh result root, preserving prior evidence.\n' "$previous" >&2
+      exit 1
+    fi
+  done
+fi
+mkdir "$RESULT_DIR"  # refuse to reuse/overwrite an existing result directory
 
 # No k6 (including setup) until the same diagnostic path has passed preflight.
 if ! python3 -B scripts/m10c/collect.py --preflight \
@@ -19,6 +28,13 @@ if ! python3 -B scripts/m10c/collect.py --preflight \
   exit 1
 fi
 JMX_JAVA_HOME="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["tomcat_jmx"]["jdk"]["java_home"])' "$RESULT_DIR/preflight.json")"
+
+# 5104 is explicitly a JFR diagnostic run; earlier workflows remain available.
+JFR_ENABLED=false
+if [[ "$RUN_ID" == 5104 ]]; then
+  JFR_ENABLED=true
+  python3 -B scripts/m10c/jfr.py start --result-dir "$RESULT_DIR"
+fi
 
 python3 -B scripts/m10c/collect.py \
   --java-home "$JMX_JAVA_HOME" \
@@ -33,6 +49,10 @@ cleanup() {
   fi
 }
 trap cleanup EXIT INT TERM
+
+if "$JFR_ENABLED"; then
+  python3 -B scripts/m10c/jfr.py launch --result-dir "$RESULT_DIR"
+fi
 
 set +e
 env \
@@ -74,6 +94,9 @@ fi
 COLLECTOR_PID=''
 
 printf '%s\n' "$K6_STATUS" > "$RESULT_DIR/k6-exit-code.txt"
+if "$JFR_ENABLED"; then
+  python3 -B scripts/m10c/jfr.py finish --result-dir "$RESULT_DIR" || true
+fi
 git rev-parse HEAD > "$RESULT_DIR/git-sha.txt"
 git status --porcelain --untracked-files=all > "$RESULT_DIR/git-status.txt"
 printf 'Evidence: %s\nk6 exit code: %s\n' "$RESULT_DIR" "$K6_STATUS"

@@ -78,6 +78,29 @@ class NormalizationTests(unittest.TestCase):
             with self.subTest(raw=raw), self.assertRaises(ValueError):
                 collect.normalize_jmx(raw)
 
+    def test_5103_helper_self_match_regression(self):
+        output = """19023 /jdk/bin/java -XX:TieredStopAtLevel=1 -cp /app/classes:/app/lib.jar dev.heimdall.HeimdallApplication --server.tomcat.max-connections=12000
+20417 /jdk/bin/java --add-modules jdk.attach /repo/scripts/m10c/TomcatJmxProbe.java 19023 dev.heimdall.HeimdallApplication
+20418 /jdk/bin/java OtherMain dev.heimdall.HeimdallApplication
+20419 /jdk/bin/java JmxFixture dev.heimdall.HeimdallApplication
+20420 /jdk/bin/java org.codehaus.plexus.classworlds.launcher.Launcher dev.heimdall.HeimdallApplication
+20421 /jdk/bin/jcmd 19023 VM.command_line dev.heimdall.HeimdallApplication
+20422 /bin/sh /jdk/bin/java dev.heimdall.HeimdallApplication
+20423 /jdk/bin/javac dev.heimdall.HeimdallApplication
+20424 k6 run dev.heimdall.HeimdallApplication
+"""
+        self.assertEqual(collect.backend_candidates(output), [{'pid': 19023, 'main': collect.APPLICATION_MAIN}])
+        self.assertEqual(collect.backend_candidates(output.split('\n', 1)[1]), [])
+
+    def test_java_main_options_and_multiple_real_backends(self):
+        for options in ('-cp classes', '--class-path=classes', '--add-opens java.base/java.lang=ALL-UNNAMED -Dfoo=bar', '-p modules --add-modules=jdk.attach'):
+            self.assertEqual(collect.java_main(options + ' ' + collect.APPLICATION_MAIN + ' extra'), collect.APPLICATION_MAIN)
+        for args in ('-jar app.jar ' + collect.APPLICATION_MAIN, '@options ' + collect.APPLICATION_MAIN,
+                     'OtherMain ' + collect.APPLICATION_MAIN, '--unknown value ' + collect.APPLICATION_MAIN):
+            self.assertNotEqual(collect.java_main(args), collect.APPLICATION_MAIN)
+        lines = '\n'.join(f'{pid} /jdk/bin/java -cp classes {collect.APPLICATION_MAIN}' for pid in (1, 2))
+        self.assertEqual(len(collect.backend_candidates(lines)), 2)
+
     def test_pid_discovery_excludes_launchers_and_unrelated_processes(self):
         lines = ''' 42 /Library/Java/JavaVirtualMachines/jdk 21/Contents/Home/bin/java -cp /tmp/classes dev.heimdall.HeimdallApplication
 43 java org.codehaus.plexus.classworlds.launcher.Launcher -Dspring-boot.run.main-class=dev.heimdall.HeimdallApplication
@@ -113,6 +136,7 @@ class ProbeFailureTests(unittest.TestCase):
                 result = self.probe.sample()
                 self.assert_failed_collector_continues(result, message)
                 self.assertEqual(self.probe.starts, 0)
+                self.assertEqual(self.probe.next_retry, 0)
 
     def fake_start(self, script):
         def start(pid):

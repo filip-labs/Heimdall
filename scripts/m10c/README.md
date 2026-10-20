@@ -235,7 +235,7 @@ local Attach/JMX with quoted MBeans and two ports, verify connection/agent reuse
 processes. They never launch Heimdall or generate application traffic/data. The tooling CI job
 provides Java 21 and runs these tests without skipping Attach coverage.
 
-## Phase 3: controlled connection-limit experiment (5103, NOT executed)
+## Phase 3: controlled connection-limit experiment (completed 5103)
 
 ### 5102 findings
 
@@ -301,9 +301,9 @@ record the selected Java paths/version. After startup, sample failures remain fa
 HTTP, Tomcat Micrometer, JMX, Hikari, process, PostgreSQL and container evidence is preserved.
 The gate verifies current readiness; it cannot guarantee that the backend stays healthy afterward.
 
-### Exact future 5103 procedure
+### Archived 5103 procedure
 
-**Do not execute 5103 as part of this preparation task.** Preserve 5101 and 5102 result directories
+**5103 is complete; do not rerun or overwrite it.** These commands retain its historical procedure. Preserve 5101 and 5102 result directories
 and backend logs unchanged. Stop the previous backend, and prepare the same fresh disposable
 Compose/database state used for 5102 before this future experiment. The only capacity variable
 changed from 5102 is **Tomcat maxConnections: 8192 → 12000**. No maxThreads, Hikari, DB, Kafka,
@@ -370,3 +370,140 @@ OS/socket behavior next. Do not tune any of these in this task.
 Tests additionally cover Java selection/fallback on mocked macOS/Linux environments, wrong/missing
 JDKs, health/JMX gate failures and shell-runner ordering with fake executables. No runner test invokes
 real k6. Existing real JDK Attach fixture tests and collector failure tests remain enabled in CI.
+
+## Phase 4: bounded JFR diagnosis (5104, NOT executed)
+
+5103 established that maxConnections=8192 was a material admission bottleneck: the controlled
+12000 limit raised resolved VUs from 8191 to 10000, exhausted from 1809 to 0, resolve failures/retries
+from 5427/3618 to 0/0, and HTTP failures from 0.9545% to 0%. Global p99 was 5006.86402 ms;
+steady p99 5336.20056 ms. All 6507 requests ≥5 seconds were steady-state heartbeat/poll requests.
+Intermittent JDBC/transaction contention with upstream worker queueing is a **MEDIUM-confidence
+candidate**, not a confirmed second bottleneck. Hikari pending peaked at 190 but was positive in
+only 17/72 steady samples; busy threads reached 200 intermittently. Database/backend/Kafka evidence
+did not establish persistent saturation. We need request-thread stacks, not more capacity tuning.
+
+### PID discovery correction
+
+5103's matcher searched for the application main anywhere among Java arguments. It therefore
+matched its own `TomcatJmxProbe.java <pid> dev.heimdall.HeimdallApplication` process, creating false
+ambiguity and cooldowns (only 14/125 successful direct JMX samples). The parser now consumes known
+JVM options and their values, then compares **only the actual main token**. It stops before program
+arguments; helper/source launchers, Maven, jcmd, javac, other Java mains, fixtures, k6 and wrappers
+cannot match merely by passing the application name as an argument. Two real backends still cause
+strict rejection. Unsupported/ambiguous command forms fail closed, including argfiles and packaged
+JAR/module launches. Since ps flattens argv, unusual unquoted classpath spaces may also fail closed;
+the documented Spring Boot launch on this machine is supported. The Attach helper's independent
+main-identity check remains in place.
+
+Deterministic JDK 21 selection, persistent connection, same-user Attach and bounded reads remain.
+Discovery errors are retried on the next sample without spawning a helper. Only actual failed
+helper/transport attempts trigger the 60-second backoff. Normal JMX sampling should no longer
+self-interrupt; coverage improvement must be measured in 5104, not assumed to be 100%.
+
+### JFR orchestration and evidence
+
+The runner automatically enables mandatory JFR **only when RUN_ID=5104**. Other run IDs retain their
+existing diagnostic flow. Use a fresh result directory; the runner rejects an existing directory
+or any prior `*-mixed-diagnostic-run-5104` directory in the selected result root. Preserve previous
+evidence rather than deleting it to retry. It never overwrites an existing JFR file/control status.
+
+After the existing health/JMX preflight passes, `jfr.py` uses its verified PID and JDK home, verifies
+Java 21 again, locates that JDK's `bin/jcmd`, and revalidates target `VM.version` and `VM.command_line`.
+It executes `JFR.check` and rejects an existing `M10C5104` recording without stopping or deleting
+other recordings. It then generates this command with the actual PID and absolute result directory:
+
+```bash
+"$JAVA_HOME/bin/jcmd" <verified-backend-pid> JFR.start \
+  name=M10C5104 settings=profile delay=5m duration=10m disk=true \
+  filename="<ABSOLUTE_RESULT_DIR>/m10c-5104-steady.jfr"
+```
+
+Syntax was verified against the installed **Java 21 `jcmd <temporary-pid> help JFR.start` output**.
+A separate idle temporary JVM validation used a one-second delay and two-second duration to verify
+scheduling, named `JFR.check`, and a nonempty recording with a space-containing filename. Neither
+validation used Heimdall, a 5k workload or the run 5104 recording name. No binary recording is committed.
+
+Every jcmd call has a 15-second timeout. A second named `JFR.check` must confirm the scheduled
+recording; a zero process exit code alone is insufficient. Missing/wrong JDK, missing jcmd, target
+identity/version mismatch, unreachable JVM, duplicate name, or rejected/unconfirmed scheduling
+aborts **before collector/k6 startup**. JFR is never optional for run 5104. A scheduling timeout may
+leave an accepted bounded recording on the JVM; inspect the retained control logs and JFR.check
+before retrying. No automatic removal of recordings is performed.
+
+Once scheduling is confirmed, the normal collector and unchanged k6 command start. After workload
+completion, JFR.check is recorded and the expected file must exist with a nonzero size. This final
+check does not parse the binary or prove event completeness. A missing/empty file prints a warning
+and marks `recording_file_ok=false`; **the original k6 exit code is preserved**, including threshold
+exit 99. Files/logs remain even when k6 fails. An early interrupted workload may leave the scheduled
+recording running until its bounded expiry; inspect JFR.check and retain its evidence manually.
+
+The result directory contains:
+
+- `jfr-start.log`: structured command/stdout/stderr/exit/timeout evidence, including identity checks;
+- `jfr-check-before.log`: existing-recording check and named scheduling confirmation;
+- `jfr-check-after.log`: post-workload recording state (normally already completed);
+- `jfr-status.json`: PID, selected jcmd/JDK/version, name, profile, delay, duration, absolute filename,
+  scheduling success/error, command timestamps, k6 launch timestamp, final existence/size/status;
+- `m10c-5104-steady.jfr`: the bounded diagnostic recording, alongside normal k6/collector artifacts.
+
+Logs for steps never reached may be absent; `jfr-status.json` retains the scheduling failure reason.
+No full JFR parsing is done during the workload.
+
+### Timing and interpretation
+
+`delay=5m` begins when JFR accepts the start command, **not** at k6 scenario start. Status records
+`start_command_at`, `start_command_returned_at`, `scheduling_confirmed_at` and
+`k6_launch_requested_at` in UTC. Acceptance lies inside the start-command interval; launch timestamp
+is immediately before invoking k6. k6 initialization and fleet setup occur afterward and add offset.
+With short setup this is small, but a slow setup can materially shift the recording before the
+steady window. Use raw k6 timestamps/first scenario activity and JFR timestamps to measure actual
+overlap; do not claim exact 600-second steady coverage or nanosecond alignment from delay alone.
+
+After 5104, inspect monitor/park/wait events and stacks, Hikari acquisition and Spring transaction
+stacks, PostgreSQL JDBC calls, Tomcat worker states/executor waits, socket read/write blocking where
+visible, CPU hot methods, allocations, GC pauses, safepoints and synchronization contention.
+The question is: **during five-second latency bursts, what are request threads actually waiting for?**
+Do not pre-decide Hikari. Profile recording adds observer overhead; compare that trade-off and report
+event availability/coverage. This is diagnostic-only and makes no performance improvement claim.
+
+### Exact future commands — do not execute during implementation
+
+Preserve 5101–5103 evidence. Stop the previous backend and prepare the same fresh disposable local
+Compose/database state used for 5103. No database reset or workload is performed by this task.
+
+Terminal 1:
+
+```bash
+cd /Users/filip_macbook/heimdall
+export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+export PATH="$JAVA_HOME/bin:$PATH"
+./mvnw spring-boot:run \
+  -Dspring-boot.run.arguments="--server.tomcat.mbeanregistry.enabled=true --server.tomcat.max-connections=12000" \
+  2>&1 | tee /tmp/heimdall-m10c-5104-backend.log
+```
+
+Wait for readiness. Expected experiment values: **maxConnections=12000 / maxThreads=200 / Hikari
+max=10**. There is no maxThreads or Hikari override and no change to production defaults. Inspect
+preflight/runtime evidence for these values before interpreting results.
+
+Terminal 2:
+
+```bash
+cd /Users/filip_macbook/heimdall
+export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+export PATH="$JAVA_HOME/bin:$PATH"
+PROFILE=5000 RUN_ID=5104 \
+RAMP_UP=5m STEADY_DURATION=10m RAMP_DOWN=1m SETUP_TIMEOUT=10m \
+HEARTBEAT_INTERVAL=15s POLL_INTERVAL=10s \
+DIAGNOSTIC_RESOLVE_MAX_ATTEMPTS=3 \
+DIAGNOSTIC_RESOLVE_BACKOFF=5s \
+scripts/m10c/run-mixed-diagnostic.sh
+```
+
+Return the complete result directory, including the JFR binary and all control evidence, plus
+`/tmp/heimdall-m10c-5104-backend.log`. Do not commit generated recordings or benchmark evidence.
+
+Tests include the exact 5103 self-match pattern, real/multiple/absent backend cases, mocked JDK 21
+jcmd ordering and arguments, duplicate/failed scheduling, filename preservation, final file status,
+and runner behavior preserving exit 99 and JFR evidence. CI is platform-independent; existing
+Attach/JMX fixtures compile the helper and validate actual local attachment without application load.

@@ -8,6 +8,7 @@ import re
 import select
 import signal
 import shutil
+import shlex
 import sys
 import tempfile
 from pathlib import Path
@@ -116,17 +117,52 @@ def jmx_unavailable(error, **metadata):
     }}
 
 
+def java_main(arguments):
+    """Find the launcher main token, never search application arguments.
+
+    ps flattens argv. Ambiguous/unrecognized launch forms fail closed; the
+    Attach helper independently verifies sun.java.command before management.
+    """
+    try:
+        tokens = shlex.split(arguments)
+    except ValueError:
+        return None
+    takes_value = {'-cp', '-classpath', '--class-path', '-p', '--module-path',
+                   '--upgrade-module-path', '--add-modules', '--limit-modules',
+                   '--add-exports', '--add-opens', '--add-reads', '--patch-module',
+                   '--enable-native-access'}
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token in {'-jar', '-m', '--module', '--source'} or token.startswith(('@', '--module=')):
+            return None  # packaged/module/source launch forms are not Heimdall's documented launch
+        if token in takes_value:
+            index += 2
+        elif token.startswith(('-D', '-X', '-javaagent:', '-agentlib:', '-agentpath:')):
+            index += 1
+        elif token in {'-server', '-client', '-ea', '-da', '-esa', '-dsa', '--enable-preview'}:
+            index += 1
+        elif token.startswith('--') and '=' in token and token.split('=', 1)[0] in takes_value:
+            index += 1
+        elif token.startswith('-'):
+            return None  # do not guess how many arguments an unknown option consumes
+        else:
+            return token
+    return None
+
+
 def backend_candidates(output):
     candidates = []
     for line in output.splitlines():
-        # ps does not quote argv: only accept an exact Java executable suffix and
-        # a standalone main class, never a Maven -Dspring-boot.run.main-class value.
-        match = re.match(r'^\s*(\d+)\s+(.*?\bjava)\s+(.+)$', line)
-        if not match or Path(match[2]).name != 'java':
+        match = re.match(r'^\s*(\d+)\s+(java|/[^\r\n]*?/bin/java)\s+(.+)$', line)
+        if not match:
             continue
-        tokens = match[3].split()
-        if APPLICATION_MAIN in tokens and not any(
-                token in tokens for token in ('-jar', 'org.codehaus.plexus.classworlds.launcher.Launcher')):
+        executable = match[2]
+        # Permit unquoted JDK directory spaces from ps, but reject shell/wrapper
+        # prefixes such as "/bin/sh /jdk/bin/java" rather than finding a later java.
+        if re.search(r'\s+/', executable):
+            continue
+        if java_main(match[3]) == APPLICATION_MAIN:
             candidates.append({'pid': int(match[1]), 'main': APPLICATION_MAIN})
     return candidates
 
@@ -334,6 +370,7 @@ class JmxProbe:
 
     def sample(self):
         started = time.monotonic()
+        helper_attempted = False
         metadata = {'sampled_at': utc_now(), 'requested_port': self.port,
                     'startup_timeout_seconds': self.startup_timeout,
                     'sample_timeout_seconds': self.sample_timeout}
@@ -353,6 +390,7 @@ class JmxProbe:
             if self.process is not None and (self.pid != pid or self.process.poll() is not None):
                 self.close()
             fresh = self.process is None
+            helper_attempted = True
             if fresh:
                 self.start(pid)
             result = normalize_jmx(self.exchange(self.startup_timeout if fresh else self.sample_timeout), self.port)
@@ -368,7 +406,9 @@ class JmxProbe:
                 self.stderr.seek(0)
                 metadata['helper_stderr'] = self.stderr.read(8192).decode('utf-8', errors='replace')
             self.close()
-            self.next_retry = time.monotonic() + self.retry_seconds
+            # Discovery failures do not start a JVM and should be retried on the
+            # next sample. Back off only actual helper/transport attempts.
+            self.next_retry = time.monotonic() + self.retry_seconds if helper_attempted else 0
             result = jmx_unavailable(self.last_error)
         result['tomcat_jmx'].update(metadata, jdk=self.jdk, helper_starts=self.starts,
                                     duration_seconds=round(time.monotonic() - started, 4))
