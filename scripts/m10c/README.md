@@ -371,7 +371,7 @@ Tests additionally cover Java selection/fallback on mocked macOS/Linux environme
 JDKs, health/JMX gate failures and shell-runner ordering with fake executables. No runner test invokes
 real k6. Existing real JDK Attach fixture tests and collector failure tests remain enabled in CI.
 
-## Phase 4: bounded JFR diagnosis (5104, NOT executed)
+## Phase 4: bounded JFR diagnosis (5104, completed)
 
 5103 established that maxConnections=8192 was a material admission bottleneck: the controlled
 12000 limit raised resolved VUs from 8191 to 10000, exhausted from 1809 to 0, resolve failures/retries
@@ -466,7 +466,7 @@ The question is: **during five-second latency bursts, what are request threads a
 Do not pre-decide Hikari. Profile recording adds observer overhead; compare that trade-off and report
 event availability/coverage. This is diagnostic-only and makes no performance improvement claim.
 
-### Exact future commands — do not execute during implementation
+### Historical 5104 commands — retained for provenance; do not rerun this ID
 
 Preserve 5101–5103 evidence. Stop the previous backend and prepare the same fresh disposable local
 Compose/database state used for 5103. No database reset or workload is performed by this task.
@@ -507,3 +507,51 @@ Tests include the exact 5103 self-match pattern, real/multiple/absent backend ca
 jcmd ordering and arguments, duplicate/failed scheduling, filename preservation, final file status,
 and runner behavior preserving exit 99 and JFR evidence. CI is platform-independent; existing
 Attach/JMX fixtures compile the helper and validate actual local attachment without application load.
+
+
+## Final M10C conclusion and transition to M10D
+
+**M10C tuning stops here.** Next: **M10D — reproducibility/capacity re-test and
+final scalability report.** No 5105 optimization experiment is justified.
+
+Tomcat maxConnections=8192 was a confirmed material admission bottleneck for
+this tested mixed workload. The controlled 8192→12000 change improved resolved
+VUs 8191→10000, exhausted 1809→0, resolve failures 5427→0, retries 3618→0 and HTTP
+failures approximately 0.95%→0%. Both 5103 and 5104 admitted all 10000 VUs.
+
+5103 global/steady p99 was 5006.86402/5336.20056ms (k6 exit 99). Without further
+tuning, 5104 achieved 3226.55928/3240.29272ms, zero HTTP failures, both thresholds
+passed and k6 exit 0. JMX 128/128 confirms the PID fix. Valid JFR covered
+19:44:21.448613–19:54:21.495896 UTC, overlapping approximately 591.99 s of the
+estimated steady window, not all 600 s (setup offset).
+
+JFR directly observes ConcurrentBag.borrow→HikariPool.getConnection→Spring/
+Hibernate transaction entry on heartbeat/polling. Pressure is intermittent:
+pending median 0, positive 14/77 steady samples versus 17/72 previously. The full
+second-bottleneck hypothesis remains **SUPPORTED / MEDIUM**; no unique
+pathological holder/query or sustained DB/backend/Kafka saturation is established.
+GC does not explain the multi-second tail. Do not change Hikari, maxThreads or
+query/transaction semantics speculatively. The reason 5104 is faster is unproven;
+do not credit diagnostic instrumentation as a performance optimization.
+
+The proven connection capacity is now codified only in the opt-in Spring
+`loadtest` profile: maxConnections 12000 and MBean registry enabled. Normal
+application defaults remain unchanged; worker maximum 200 and Hikari maximum 10
+remain defaults. This is justified for the measured environment, not a universal
+production-optimal value. No DB/Kafka/JVM/OS tuning is included. Configuration
+binding tests verify both default and loadtest behavior without starting services.
+
+All diagnostic tooling remains: bounded resolve retries, portable process
+sampling, deterministic Java 21, persistent JMX, corrected PID discovery,
+strict preflight and bounded JFR. JFR is optional investigative tooling for
+normal load tests, not a mandatory M10D instrument. The special 5104 gate remains
+for historical reproducibility; never reuse its RUN_ID.
+
+Use the [M10D runbook](../../docs/performance/m10d-local-runbook.md) for profile
+startup, original baseline-equivalent scenarios, fresh IDs and evidence requirements.
+The [scalability report skeleton](../../docs/scalability.md) contains no fabricated
+M10D results. Review evidence is local/uncommitted; durable discussion:
+[5103 review](https://github.com/filip-labs/Heimdall/pull/41#issuecomment-6299294574),
+[5104 review](https://github.com/filip-labs/Heimdall/pull/41#issuecomment-6318263469).
+PR #41 remains subject to review; issues #34/#35 remain open. This concludes investigation,
+not a claim that M10D has executed or that one passing run guarantees capacity.

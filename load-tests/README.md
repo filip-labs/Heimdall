@@ -101,3 +101,11 @@ Real runs require `--reset-disposable-db` and delete the local disposable test D
 previews warmup plus two measured runs at one fleet size. See the
 [automation runbook](../docs/performance/m10b-local-runbook.md#automated-local-k6-runs-one-terminal)
 for safety, artifacts, overrides, M10D reuse and manual fallback.
+
+## M10D preparation
+
+The opt-in Spring `loadtest` profile codifies measured Tomcat connection capacity
+12000 and enables MBeans; it does not change normal defaults, workers or Hikari.
+Use the [M10D runbook](../docs/performance/m10d-local-runbook.md) for startup,
+the baseline-equivalent matrix and evidence requirements. M10D is not yet run;
+its [report skeleton](../docs/scalability.md) keeps results pending.
