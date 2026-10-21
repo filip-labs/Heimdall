@@ -9,7 +9,10 @@ recorded and the affected suite is repeated.
 ## Automated local k6 runs (one terminal)
 
 The runner automates evidence collection for #36; it produces no authoritative
-performance classification. M10C has not started. The manual steps below remain
+performance classification. This is the historical pre-optimization procedure;
+for the completed M10C conclusions and prepared M10D re-test, use the
+[M10D runbook](m10d-local-runbook.md). Do not activate `loadtest` for M10B.
+The manual steps below remain
 the fallback for debugging and for simulator/rollout sessions.
 
 Prerequisites: Bash, Python **3.9+**, curl, Git, local Docker/Compose, Java **21**,

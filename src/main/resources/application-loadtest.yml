@@ -1,0 +1,7 @@
+# Measured local/load-test capacity; opt in with --spring.profiles.active=loadtest.
+# Not a universal production default. See docs/performance/m10d-local-runbook.md.
+server:
+  tomcat:
+    max-connections: 12000
+    mbeanregistry:
+      enabled: true
