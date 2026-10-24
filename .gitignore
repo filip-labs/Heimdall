@@ -35,3 +35,8 @@ build/
 ### Python ###
 __pycache__/
 *.py[cod]
+
+### Local Compose secrets ###
+.env
+.env.*
+!.env.example
