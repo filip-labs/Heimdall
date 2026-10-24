@@ -47,7 +47,7 @@ export function Rollouts() {
       />
       <ErrorState message={q.error} retry={q.refresh} stale={!!items} />
       {!items ? (
-        <Loading />
+        !q.error && <Loading />
       ) : !featured ? (
         <Panel label="JOURNEYS">
           <Empty

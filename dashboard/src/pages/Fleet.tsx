@@ -15,6 +15,8 @@ import {
 import { SoftwareDistribution } from "../components/SoftwareDistribution";
 import { fleetCounts } from "../utils/domain";
 import { number } from "../utils/format";
+const PAGE_SIZE = 5;
+
 export function Fleet() {
   const query = usePolling(vehicles.list);
   const [search, setSearch] = useState("");
@@ -29,7 +31,7 @@ export function Fleet() {
         (state === "ALL" || v.connectivityStatus === state),
     )
     .sort((a, b) => a.vin.localeCompare(b.vin));
-  const pages = Math.max(1, Math.ceil(filtered.length / 10));
+  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const current = Math.min(page, pages - 1);
   return (
     <>
@@ -40,7 +42,7 @@ export function Fleet() {
       />
       <ErrorState message={query.error} retry={query.refresh} stale={!!list} />
       {!list ? (
-        <Loading />
+        !query.error && <Loading />
       ) : !list.length ? (
         <Panel label="FLEET">
           <Empty title="No vehicles registered">
@@ -106,7 +108,7 @@ export function Fleet() {
               {!counts.offline && <p>All registered vehicles are online.</p>}
             </Panel>
           </div>
-          <Panel label="VEHICLES" title="Fleet details">
+          <Panel label="VEHICLES" title="Fleet details" className="fleet-table">
             <div className="table-tools">
               <label className="search">
                 <img src="/assets/search.svg" width="20" height="20" alt="" />
@@ -147,38 +149,43 @@ export function Fleet() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.slice(current * 10, current * 10 + 10).map((v) => (
-                    <tr key={v.id}>
-                      <td>
-                        <Link className="vehicle-link" to={`/vehicles/${v.id}`}>
-                          <img
-                            src="/assets/vehicle.svg"
-                            width="22"
-                            height="22"
-                            alt=""
-                          />
-                          {v.vin}
-                        </Link>
-                      </td>
-                      <td>
-                        <span className="version">{v.softwareVersion}</span>
-                      </td>
-                      <td>
-                        <Status value={v.connectivityStatus} />
-                      </td>
-                      <td>
-                        <Timestamp value={v.lastSeenAt} />
-                      </td>
-                      <td>
-                        <Link
-                          aria-label={`Inspect ${v.vin}`}
-                          to={`/vehicles/${v.id}`}
-                        >
-                          ›
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
+                  {filtered
+                    .slice(current * PAGE_SIZE, current * PAGE_SIZE + PAGE_SIZE)
+                    .map((v) => (
+                      <tr key={v.id}>
+                        <td>
+                          <Link
+                            className="vehicle-link"
+                            to={`/vehicles/${v.id}`}
+                          >
+                            <img
+                              src="/assets/vehicle.svg"
+                              width="22"
+                              height="22"
+                              alt=""
+                            />
+                            {v.vin}
+                          </Link>
+                        </td>
+                        <td>
+                          <span className="version">{v.softwareVersion}</span>
+                        </td>
+                        <td>
+                          <Status value={v.connectivityStatus} />
+                        </td>
+                        <td>
+                          <Timestamp value={v.lastSeenAt} />
+                        </td>
+                        <td>
+                          <Link
+                            aria-label={`Inspect ${v.vin}`}
+                            to={`/vehicles/${v.id}`}
+                          >
+                            ›
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>
@@ -190,7 +197,7 @@ export function Fleet() {
             <div className="panel-footer">
               <span>
                 {filtered.length
-                  ? `${current * 10 + 1}–${Math.min((current + 1) * 10, filtered.length)} of ${filtered.length}`
+                  ? `${current * PAGE_SIZE + 1}–${Math.min((current + 1) * PAGE_SIZE, filtered.length)} of ${filtered.length}`
                   : "0 vehicles"}
               </span>
               <div className="actions">

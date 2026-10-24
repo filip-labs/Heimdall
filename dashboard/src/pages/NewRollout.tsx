@@ -83,7 +83,7 @@ export function NewRollout() {
       />
       <ErrorState message={q.error} retry={q.refresh} stale={!!q.data} />
       {!q.data ? (
-        <Loading />
+        !q.error && <Loading />
       ) : !available.length ? (
         <Panel label="RELEASE REQUIRED">
           <Empty

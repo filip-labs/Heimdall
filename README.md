@@ -104,6 +104,31 @@ Heimdall currently includes:
 - Operator-controlled rollout pause, resume, and cancel.
 - Pessimistic database locking for rollout stage advancement.
 
+## Operator Dashboard
+
+The desktop-first React + TypeScript + Vite console covers fleet/vehicle state,
+software releases and creation, staged rollout planning and controls, deployment
+event timelines, and rollback inspection/actions. It follows the accepted Heimdall
+Figma design; Grafana continues to own infrastructure metrics.
+
+```bash
+# Start the backend on localhost:8080, then (Node 22.14+ LTS):
+cd dashboard
+npm install
+npm run dev
+```
+
+Open the URL printed by Vite. Relative `/api` requests are proxied to
+`http://localhost:8080`; use `API_TARGET=http://localhost:8081 npm run dev` for another
+local backend. No CORS changes are required. The interface assumes a trusted control
+plane and does not implement operator authentication. Polling runs every eight
+seconds and pauses in background tabs. Run `npm run typecheck`, `npm run lint`,
+`npm test`, and `npm run build` for frontend validation.
+
+See [API capabilities and metric semantics](docs/m13/api-capabilities.md) and the
+[repeatable 100-vehicle dashboard demo](docs/m13/demo.md) for the isolated fixture,
+acceptance evidence, screenshots and the M14 hosting decision.
+
 ## Fleet Simulation
 
 Run the simulator after the control plane is available:

@@ -22,7 +22,7 @@ Fleet total = all vehicles; online/offline use backend connectivityStatus. Distr
 groups exact softwareVersion including offline. Installed/failed/deployed counts sum
 backend incremental stage counters, never cumulative targets. Overall failure rate =
 failed/deployed × 100. Current stage rate uses only its own failed/deployment counters,
-matching RolloutEvaluationWorker. The health gate runs only after every deployment in
+matching RolloutEvaluationWorker (four decimal places, half-up). The health gate runs only after every deployment in
 that stage is terminal and fails strictly above the threshold; earlier rates are provisional.
 Stage targetVehicleCount is cumulative; incremental cohort is the difference from the
 previous target. Installation progress is installed/totalVehicles. A completed rollout

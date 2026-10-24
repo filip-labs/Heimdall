@@ -39,7 +39,7 @@ export function stageMetrics(stages: Stage[]) {
   return { ...total, failureRate: failureRate(total.failed, total.deployed) };
 }
 export const failureRate = (failed: number, deployed: number) =>
-  deployed ? (failed * 100) / deployed : 0;
+  deployed ? Math.round((failed * 1000000) / deployed) / 10000 : 0;
 export function stagePlan(text: string): number[] | null {
   const values = text.split(",").map((s) => Number(s.trim()));
   return values.length &&

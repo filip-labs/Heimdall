@@ -55,7 +55,7 @@ export function RolloutDetail() {
           description="Stage progression and operational controls."
         />
         <ErrorState message={q.error} retry={q.refresh} />
-        <Loading />
+        {!q.error && <Loading />}
       </>
     );
   const [r, stages, all] = q.data;
@@ -105,19 +105,25 @@ export function RolloutDetail() {
       )}
       <ErrorState
         message={q.error ?? error}
-        retry={q.refresh}
+        retry={() => {
+          setError(undefined);
+          q.refresh();
+        }}
         stale={!!q.error}
       />
       {current?.status === "FAILED" && (
         <div className="notice danger">
           <strong>
-            Health gate failed at stage {current.stageIndex + 1}. The rollout is
-            paused and cannot be resumed. Inspect failures and recovery below.
+            Health gate failed at stage {current.stageIndex + 1}. The rollout is{" "}
+            {r.status === "PAUSED"
+              ? "paused and cannot be resumed"
+              : r.status.toLowerCase()}
+            . Inspect failures and recovery below.
           </strong>
         </div>
       )}
       <div className="three-pane">
-        <Panel label="ROLLOUT" dark>
+        <Panel label="ROLLOUT" dark className="rollout-summary">
           <strong className="hero-number">
             {current?.targetPercentage ?? 0}%
           </strong>
@@ -133,25 +139,27 @@ export function RolloutDetail() {
               <span>failed</span>
             </div>
           </div>
-          <Meta label="Fleet target">{r.totalVehicles} vehicles</Meta>
-          <Meta label="Overall failure rate">{percent(m.failureRate)}</Meta>
+          <div className="summary-pair">
+            <Meta label="Fleet target">{r.totalVehicles} vehicles</Meta>
+            <Meta label="Overall failure rate">{percent(m.failureRate)}</Meta>
+          </div>
           <div className="accent-rule" />
           <Meta label="Target release">
             <Link to={`/releases/${r.releaseId}`}>
               {r.targetSoftwareVersion}
             </Link>
           </Meta>
-          <Meta label="Rollout ID">
+          <details className="small">
+            <summary>Rollout identifier</summary>
             <code>{r.id}</code>
-          </Meta>
-          <Status value={r.status} />
+          </details>
           <p className="muted small">
             Installation progress:{" "}
             {percent(
               r.totalVehicles ? (m.installed / r.totalVehicles) * 100 : 0,
-            )}
-            . Backend status determines completion, including tolerated
-            failures.
+            )}{" "}
+            of the fleet target. Counts retain successful installs that later
+            rolled back.
           </p>
           <Link className="button light" to="/rollouts">
             Back to rollouts

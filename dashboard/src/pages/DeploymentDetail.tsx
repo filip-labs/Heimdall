@@ -58,7 +58,7 @@ export function DeploymentDetail() {
           description="Inspect deployment transition history."
         />
         <ErrorState message={q.error} retry={q.refresh} />
-        <Loading />
+        {!q.error && <Loading />}
       </>
     );
   const { d, events, all, catalog, v } = q.data;
@@ -83,7 +83,10 @@ export function DeploymentDetail() {
       />
       <ErrorState
         message={q.error ?? error}
-        retry={q.refresh}
+        retry={() => {
+          setError(undefined);
+          q.refresh();
+        }}
         stale={!!q.error}
       />
       <div className="three-pane">

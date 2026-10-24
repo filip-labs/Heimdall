@@ -28,7 +28,7 @@ export function VehicleDetail() {
           description="Vehicle identity and update history."
         />
         <ErrorState message={q.error} retry={q.refresh} />
-        <Loading />
+        {!q.error && <Loading />}
       </>
     );
   const [v, all] = q.data;

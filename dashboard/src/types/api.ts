@@ -13,9 +13,9 @@ export interface Release {
   description: string | null;
   artifactUrl: string;
   checksum: string;
-  signatureAlgorithm: string;
-  signingKeyId: string;
-  signature: string;
+  signatureAlgorithm: string | null;
+  signingKeyId: string | null;
+  signature: string | null;
   createdAt: string;
 }
 export interface CreateRelease {
@@ -72,9 +72,9 @@ export interface Deployment {
   targetSoftwareVersion: string;
   artifactUrl: string;
   checksum: string;
-  signatureAlgorithm: string;
-  signingKeyId: string;
-  signature: string;
+  signatureAlgorithm: string | null;
+  signingKeyId: string | null;
+  signature: string | null;
   status: DeploymentStatus;
   failureReason: string | null;
   rollbackOfDeploymentId: string | null;

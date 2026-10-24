@@ -109,7 +109,9 @@ export function ErrorState({
         {stale ? "Showing last received data. " : ""}
         {message}
       </strong>
-      <button onClick={retry}>Retry</button>
+      <button type="button" onClick={retry}>
+        Retry
+      </button>
     </div>
   ) : null;
 }

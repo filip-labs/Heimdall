@@ -32,7 +32,7 @@ export function Releases() {
       <Header
         eyebrow="SOFTWARE"
         title="Artifact catalog"
-        description="Signed software releases ready for staged delivery."
+        description="Software artifacts and signing metadata for staged delivery."
         actions={
           <Link className="button accent" to="/releases/new">
             Create release
@@ -41,7 +41,7 @@ export function Releases() {
       />
       <ErrorState message={q.error} retry={q.refresh} stale={!!q.data} />
       {!q.data ? (
-        <Loading />
+        !q.error && <Loading />
       ) : !latest ? (
         <Panel label="RELEASES">
           <Empty
@@ -114,7 +114,7 @@ export function Releases() {
                         }{" "}
                         vehicles
                       </td>
-                      <td>{r.signingKeyId}</td>
+                      <td>{r.signingKeyId ?? "No signing metadata"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -142,7 +142,7 @@ export function ReleaseDetail() {
           description="Artifact metadata and fleet adoption."
         />
         <ErrorState message={q.error} retry={q.refresh} />
-        <Loading />
+        {!q.error && <Loading />}
       </>
     );
   const [r, fleet] = q.data;
@@ -151,7 +151,11 @@ export function ReleaseDetail() {
       <Header
         eyebrow="SOFTWARE / RELEASE"
         title={`Release ${r.version}`}
-        description="Backend-signed artifact and current fleet adoption."
+        description={
+          r.signature
+            ? "Backend-signed artifact and current fleet adoption."
+            : "Historical artifact: signature metadata is unavailable. Vehicles require signed releases."
+        }
         actions={
           <Link className="button accent" to={`/rollouts/new?release=${r.id}`}>
             Plan software journey
@@ -194,8 +198,8 @@ export function ReleaseDetail() {
           <SoftwareDistribution vehicles={fleet} />
         </Panel>
         <Panel label="SIGNING METADATA" title="Backend signature">
-          <Meta label="Algorithm">{r.signatureAlgorithm}</Meta>
-          <Meta label="Key identifier">{r.signingKeyId}</Meta>
+          <Meta label="Algorithm">{r.signatureAlgorithm ?? "Unavailable"}</Meta>
+          <Meta label="Key identifier">{r.signingKeyId ?? "Unavailable"}</Meta>
           <p className="muted">
             Signing keys remain on the control plane. Vehicles verify the signed
             manifest before installation.

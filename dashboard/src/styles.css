@@ -1122,3 +1122,96 @@ progress {
     display: none;
   }
 }
+/* Desktop geometry follows the accepted Figma rails and compact fleet ledger. */
+.sidebar nav a:not(.active) img {
+  filter: brightness(0) invert(0.65);
+}
+.sidebar nav a.active img {
+  filter: brightness(0);
+}
+.fleet-table .table-tools {
+  position: absolute;
+  right: 22px;
+  top: 24px;
+  margin: 0;
+}
+.table-tools select {
+  width: 168px;
+  flex: 0 0 168px;
+}
+.table-tools .search {
+  width: 240px;
+  flex: 0 0 240px;
+}
+.table-tools input {
+  width: 190px;
+  max-width: 190px;
+}
+.fleet-table h2 {
+  margin-bottom: 24px;
+}
+.fleet-table td {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+.fleet-grid > .panel {
+  margin-bottom: 20px;
+}
+.fleet-grid .hero-number {
+  display: block;
+  margin-top: 8px;
+}
+.fleet-grid .pulse-head .hero-number {
+  margin-top: 0;
+}
+.three-pane > .dark > .muted.small {
+  line-height: 1.6;
+  margin: 18px 0;
+}
+.event-timeline .status {
+  padding: 0;
+  background: transparent;
+}
+.event-timeline .status .dot {
+  display: none;
+}
+@media (max-width: 1100px) {
+  .fleet-table .table-tools {
+    position: static;
+    margin: 18px 0;
+  }
+  .table-tools {
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 850px) {
+  .table-tools .search {
+    flex: 1 1 160px;
+  }
+  .table-tools select {
+    flex: 1 1 140px;
+    width: auto;
+  }
+}
+.summary-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.rollout-summary .meta {
+  margin: 18px 0;
+}
+.rollout-summary .metric-row {
+  margin: 20px 0;
+}
+.rollout-summary hr {
+  margin: 24px 0;
+}
+.rollout-summary details {
+  margin: 16px 0;
+  color: #b8b8b8;
+}
+.rollout-summary details summary {
+  cursor: pointer;
+  margin-bottom: 8px;
+}

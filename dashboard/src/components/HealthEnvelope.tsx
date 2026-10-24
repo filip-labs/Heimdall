@@ -40,7 +40,9 @@ export function HealthEnvelope({
       <hr />
       <Meta label="Health gate">
         {stage.status === "FAILED"
-          ? "FAILED — rollout paused"
+          ? rollout.status === "PAUSED"
+            ? "FAILED — rollout paused"
+            : "FAILED"
           : !terminal
             ? "Awaiting terminal deployments"
             : rate > rollout.failureThresholdPercent

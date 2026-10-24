@@ -108,6 +108,7 @@ describe("rollout semantics", () => {
   });
   it("uses all stage deployments as health denominator", () => {
     assert.equal(failureRate(1, 5), 20);
+    assert.equal(failureRate(1, 3), 33.3333);
     assert.equal(failureRate(0, 0), 0);
   });
 });
