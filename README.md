@@ -392,9 +392,12 @@ Temurin runtime, with a 60-second startup allowance. Only `health`, `info` and
 `prometheus` remain exposed. `docker stop --time 60 heimdall-backend-manual` delivers
 SIGTERM directly to Java and allows time for Kafka and Spring's graceful shutdown.
 
-The full-stack Compose workflow above builds this same image. Container build,
-integration smoke CI and image publishing remain deferred to M12C; existing
-GitHub Actions are unchanged.
+The full-stack Compose workflow above builds this same image. CI also builds it
+independently on Ubuntu, starts only PostgreSQL, Kafka and Heimdall with a bounded
+health wait, checks Flyway migrations and runs a vehicle POST/GET round-trip.
+Security keys are generated only for that run; cleanup removes the CI volume and
+temporary configuration. This validates packaging and basic integration, not
+production deployment readiness. Image publishing is outside this milestone.
 
 ## Observability
 
