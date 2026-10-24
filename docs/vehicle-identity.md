@@ -178,10 +178,12 @@ These are functional checks, not M10 performance measurements.
 
 ## Scope and limitations
 
-This implements A1 plus A2 for #42. Keep the issue open until this PR is merged and
-CI is green. Credentials cannot be recovered; rotation/revocation and rate limiting
-remain out of scope. A valid token remains usable until expiry or signing-key change.
+M11A (#42) implements A1 plus A2. Credentials cannot be recovered;
+rotation/revocation and rate limiting remain out of scope. A valid token remains
+usable until expiry or signing-key change.
 HS256 requires shared signing authority and secure key distribution. HTTPS is
 required outside isolated local testing; no production OEM PKI is claimed.
-Release/artifact signing is implemented in **M11B**; see [OTA security](ota-security.md). mTLS and fleet PKI evaluation remain
-intentionally deferred to **M11C**.
+Release/artifact signing is implemented in **M11B**; see [OTA security](ota-security.md).
+M11C records the [threat model](threat-model.md), [security regressions](security-regression.md)
+and [ADR-001](adr/001-mtls-device-authentication.md): mTLS is intentionally deferred
+in the current portfolio scope.

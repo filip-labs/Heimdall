@@ -228,6 +228,16 @@ public key before installation. Unsigned historical releases fail closed, includ
 rollback targets. See [OTA security](docs/ota-security.md) for the canonical format,
 local key generation, required backend/simulator configuration and limitations.
 
+## Security validation (M11C)
+
+Security milestones: **M11A** implements authenticated vehicle identity; **M11B**
+adds signed OTA authenticity; **M11C** adds threat modeling and security validation.
+See the [threat model](docs/threat-model.md),
+[regression matrix](docs/security-regression.md) and
+[mTLS decision](docs/adr/001-mtls-device-authentication.md). Operator/provisioning
+APIs assume a trusted control plane; deployment requires TLS. mTLS and production
+fleet PKI are intentionally deferred.
+
 ## Running Locally
 
 Start PostgreSQL, Kafka, Prometheus, and Grafana:
@@ -419,6 +429,9 @@ go test -race ./...
 - [Scalability and load testing](docs/scalability-and-load-testing.md)
 - [Vehicle identity and authentication](docs/vehicle-identity.md)
 - [OTA integrity and authenticity](docs/ota-security.md)
+- [Threat model and security boundaries](docs/threat-model.md)
+- [Security regression matrix](docs/security-regression.md)
+- [ADR-001: mTLS and device certificates](docs/adr/001-mtls-device-authentication.md)
 
 ## Roadmap
 
