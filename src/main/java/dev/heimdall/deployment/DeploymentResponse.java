@@ -14,6 +14,9 @@ public record DeploymentResponse(
         String targetSoftwareVersion,
         String artifactUrl,
         String checksum,
+        String signatureAlgorithm,
+        String signingKeyId,
+        String signature,
 
         DeploymentStatus status,
         String failureReason,
@@ -35,6 +38,9 @@ public record DeploymentResponse(
                 deployment.getRelease().getVersion(),
                 deployment.getRelease().getArtifactUrl(),
                 deployment.getRelease().getChecksum(),
+                deployment.getRelease().getSignatureAlgorithm(),
+                deployment.getRelease().getSigningKeyId(),
+                deployment.getRelease().getSignature(),
 
                 deployment.getStatus(),
                 deployment.getFailureReason(),

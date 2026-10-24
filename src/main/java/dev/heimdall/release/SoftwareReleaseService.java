@@ -1,5 +1,7 @@
 package dev.heimdall.release;
 
+import dev.heimdall.releasesigning.ReleaseManifest;
+import dev.heimdall.releasesigning.ReleaseSigningService;
 import dev.heimdall.api.ConflictException;
 import dev.heimdall.api.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +16,7 @@ import java.util.UUID;
 public class SoftwareReleaseService {
 
     private final SoftwareReleaseRepository repository;
+    private final ReleaseSigningService signing;
 
     @Transactional
     public SoftwareReleaseResponse create(CreateSoftwareReleaseRequest request) {
@@ -21,11 +24,14 @@ public class SoftwareReleaseService {
             throw new ConflictException("Software release already exists");
         }
 
+        String checksum = ReleaseManifest.normalizeChecksum(request.checksum());
+        var signature = signing.sign(request.version(), checksum);
         SoftwareRelease release = new SoftwareRelease(
                 request.version(),
                 request.description(),
                 request.artifactUrl(),
-                request.checksum()
+                checksum,
+                signature
         );
 
         return SoftwareReleaseResponse.from(repository.save(release));

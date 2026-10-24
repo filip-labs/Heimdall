@@ -9,6 +9,9 @@ public record SoftwareReleaseResponse(
         String description,
         String artifactUrl,
         String checksum,
+        String signatureAlgorithm,
+        String signingKeyId,
+        String signature,
         Instant createdAt
 ) {
 
@@ -19,6 +22,9 @@ public record SoftwareReleaseResponse(
                 release.getDescription(),
                 release.getArtifactUrl(),
                 release.getChecksum(),
+                release.getSignatureAlgorithm(),
+                release.getSigningKeyId(),
+                release.getSignature(),
                 release.getCreatedAt()
         );
     }

@@ -155,7 +155,7 @@ class VehicleEnforcementIntegrationTest {
         return "Bearer " + response.accessToken();
     }
     private DeploymentResponse deployment(UUID id) {
-        var release = releases.save(new SoftwareRelease("2.0." + sequence.incrementAndGet(), "auth test", "https://example.com/fw.bin", "abc"));
+        var release = releases.save(new SoftwareRelease("2.0." + sequence.incrementAndGet(), "auth test", "https://example.com/fw.bin", "ab".repeat(32)));
         return deployments.create(new CreateDeploymentRequest(id, release.getId()));
     }
     private String token(UUID id) { return tokens.issue(id).accessToken(); }

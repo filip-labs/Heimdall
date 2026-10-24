@@ -1,0 +1,8 @@
+{
+  "checksum": "abababababababababababababababababababababababababababababababab",
+  "manifestHex": "4845494d44414c4c2d4f54412d52454c454153452d563100000c322e302e302dceb2f09f9a97abababababababababababababababababababababababababababababababab",
+  "notice": "PUBLIC TEST VECTOR ONLY. All-zero seed; never use as deployment trust material.",
+  "publicKey": "MCowBQYDK2VwAyEAO2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik=",
+  "signature": "ndJ-01mDMj-AIH6s53tYaoh2bVdGLUvuxQQKVMfhVfVUCoW0krs1DIDqz4wBnTg2viBuEY7K2YCXT0b6Oi8fAg",
+  "version": "2.0.0-β🚗"
+}

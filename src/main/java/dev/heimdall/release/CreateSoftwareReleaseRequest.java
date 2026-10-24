@@ -17,7 +17,8 @@ public record CreateSoftwareReleaseRequest(
         String artifactUrl,
 
         @NotBlank
-        @Size(max = 128)
+        @jakarta.validation.constraints.Pattern(regexp = "[0-9a-fA-F]{64}",
+                message = "Checksum must be exactly 64 hexadecimal SHA-256 characters")
         String checksum
 ) {
 }

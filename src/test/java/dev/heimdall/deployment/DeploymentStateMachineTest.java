@@ -18,7 +18,7 @@ class DeploymentStateMachineTest {
                 "1.1.0",
                 "Test release",
                 "https://updates.heimdall.dev/1.1.0.bin",
-                "abc123"
+                "ab".repeat(32)
         );
 
         return new Deployment(vehicle, release);
@@ -137,7 +137,7 @@ class DeploymentStateMachineTest {
                 "1.1.0",
                 "Test release",
                 "https://updates.heimdall.dev/1.1.0.bin",
-                "abc123"
+                "ab".repeat(32)
         );
 
         Deployment deployment = new Deployment(vehicle, release);

@@ -568,14 +568,14 @@ func TestProcessDeploymentInstallsNormally(t *testing.T) {
 		false,
 	)
 
-	err := agent.processDeployment(context.Background(), Deployment{
+	err := agent.processDeployment(context.Background(), signedTestDeployment(t, Deployment{
 		ID:                    "deployment-1",
 		SourceSoftwareVersion: "2.0.0",
 		TargetSoftwareVersion: "2.1.0",
 		ArtifactURL:           server.URL + "/artifact.bin",
 		Checksum:              checksumFor(payload),
 		Status:                "PENDING",
-	})
+	}))
 	if err != nil {
 		t.Fatalf("expected OTA to succeed, got %v", err)
 	}
@@ -609,14 +609,14 @@ func TestProcessDeploymentSimulatesInstallationFailure(t *testing.T) {
 		true,
 	)
 
-	err := agent.processDeployment(context.Background(), Deployment{
+	err := agent.processDeployment(context.Background(), signedTestDeployment(t, Deployment{
 		ID:                    "deployment-1",
 		SourceSoftwareVersion: "2.0.0",
 		TargetSoftwareVersion: "2.1.0",
 		ArtifactURL:           server.URL + "/artifact.bin",
 		Checksum:              checksumFor(payload),
 		Status:                "PENDING",
-	})
+	}))
 	if err != nil {
 		t.Fatalf("expected simulated failure to be reported, got %v", err)
 	}
@@ -764,6 +764,7 @@ func newOTATestAgent(
 	agent.Client = server.Client()
 	agent.Downloader.client = server.Client()
 	agent.SimulateInstallFailure = simulateInstallFailure
+	agent.ReleaseVerifier = testReleaseVerifier()
 
 	return agent
 }

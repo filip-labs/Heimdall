@@ -25,6 +25,7 @@ type VehicleAgent struct {
 	BaseURL                string
 	Client                 *http.Client
 	Downloader             *artifactDownloader
+	ReleaseVerifier        *releaseVerifier
 	HeartbeatInterval      time.Duration
 	DeploymentPollInterval time.Duration
 	SimulateInstallFailure bool

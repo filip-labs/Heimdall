@@ -47,6 +47,9 @@ management:
 
 heimdall:
   security:
+    release-signing:
+      private-key: ${HEIMDALL_SECURITY_RELEASE_SIGNING_PRIVATE_KEY:}
+      key-id: ${HEIMDALL_SECURITY_RELEASE_SIGNING_KEY_ID:}
     vehicle-token:
       secret: ${HEIMDALL_SECURITY_VEHICLE_TOKEN_SECRET:}
       ttl: ${HEIMDALL_SECURITY_VEHICLE_TOKEN_TTL:5m}

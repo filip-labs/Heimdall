@@ -18,6 +18,7 @@ const (
 )
 
 type FleetConfig struct {
+	ReleaseVerifier        *releaseVerifier
 	BaseURL                string
 	FleetSize              int
 	InitialSoftwareVersion string
@@ -27,6 +28,11 @@ type FleetConfig struct {
 }
 
 func loadFleetConfigFromEnv() (FleetConfig, error) {
+	verifier, err := newReleaseVerifier(os.Getenv("HEIMDALL_OTA_SIGNING_PUBLIC_KEY"), os.Getenv("HEIMDALL_OTA_SIGNING_KEY_ID"))
+	if err != nil {
+		return FleetConfig{}, err
+	}
+
 	fleetSize, err := parsePositiveIntEnv(
 		"FLEET_SIZE",
 		defaultFleetSize,
@@ -68,6 +74,7 @@ func loadFleetConfigFromEnv() (FleetConfig, error) {
 	}
 
 	return FleetConfig{
+		ReleaseVerifier: verifier,
 		BaseURL: strings.TrimRight(
 			getEnv("HEIMDALL_URL", defaultBaseURL),
 			"/",
