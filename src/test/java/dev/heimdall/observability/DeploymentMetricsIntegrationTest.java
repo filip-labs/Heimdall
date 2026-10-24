@@ -107,7 +107,8 @@ class DeploymentMetricsIntegrationTest {
     ) {
         deploymentService.updateStatus(
                 deployment.getId(),
-                new UpdateDeploymentStatusRequest(status, failureReason)
+                new UpdateDeploymentStatusRequest(status, failureReason),
+                deployment.getVehicle().getId()
         );
     }
 

@@ -1,6 +1,7 @@
 package dev.heimdall.vehicle;
 
 import jakarta.validation.Valid;
+import dev.heimdall.vehicleauth.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
@@ -26,8 +27,11 @@ public class VehicleController {
                 .body(vehicleService.create(request));
     }
 
+    @VehicleAuthenticated
     @PostMapping("/{id}/heartbeat")
-    public VehicleResponse heartbeat(@PathVariable UUID id) {
+    public VehicleResponse heartbeat(@PathVariable UUID id,
+            @RequestAttribute(VehicleRequestAuthenticator.IDENTITY) UUID authenticatedVehicleId) {
+        VehicleAccessGuard.requireOwner(authenticatedVehicleId, id);
         return vehicleService.heartbeat(id);
     }
 

@@ -11,6 +11,14 @@ import (
 )
 
 type VehicleAgent struct {
+	credential      string
+	authMu          sync.Mutex
+	token           string
+	tokenGeneration uint64
+	refreshAt       time.Time
+	refreshing      chan struct{}
+	now             func() time.Time
+
 	ID                     string
 	VIN                    string
 	SoftwareVersion        string
@@ -53,19 +61,15 @@ func (a *VehicleAgent) registerOrResolve(ctx context.Context) error {
 	case http.StatusCreated:
 		a.ID = response.ID
 		a.SoftwareVersion = response.SoftwareVersion
+		a.credential = response.Credential
+		if _, _, err := a.accessToken(ctx); err != nil {
+			return err
+		}
 		a.logf("registered as %s", shortID(a.ID))
 		return nil
 
 	case http.StatusConflict:
-		existingVehicle, err := a.getVehicleByVIN(ctx)
-		if err != nil {
-			return err
-		}
-
-		a.ID = existingVehicle.ID
-		a.SoftwareVersion = existingVehicle.SoftwareVersion
-		a.logf("reused existing vehicle %s", shortID(a.ID))
-		return nil
+		return fmt.Errorf("vehicle VIN already provisioned: cannot authenticate without its provisioning credential; use a fresh disposable simulator/database environment")
 
 	default:
 		return fmt.Errorf(

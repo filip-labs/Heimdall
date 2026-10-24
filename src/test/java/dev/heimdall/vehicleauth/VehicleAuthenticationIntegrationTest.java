@@ -55,7 +55,8 @@ class VehicleAuthenticationIntegrationTest {
             restClient.get().uri(uri).exchange().expectStatus().isOk().expectBody(String.class)
                     .value(body -> assertThat(body).doesNotContain(credential, "credential", stored));
         }
-        restClient.post().uri("/api/v1/vehicles/" + id + "/heartbeat").exchange()
+        restClient.post().uri("/api/v1/vehicles/" + id + "/heartbeat")
+                .header("Authorization", "Bearer " + tokens.issue(id).accessToken()).exchange()
                 .expectStatus().isOk().expectBody(String.class)
                 .value(body -> assertThat(body).doesNotContain(credential, "credential", stored));
         restClient.post().uri("/api/v1/vehicles").body(Map.of("vin", "7FC11000000000001", "softwareVersion", "2.0.0"))

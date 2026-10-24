@@ -1,5 +1,6 @@
 package dev.heimdall.deployment;
 
+import dev.heimdall.vehicleauth.VehicleAccessGuard;
 import dev.heimdall.api.BadRequestException;
 import dev.heimdall.api.ConflictException;
 import dev.heimdall.api.ResourceNotFoundException;
@@ -119,10 +120,14 @@ public class DeploymentService {
     @Transactional
     public DeploymentResponse updateStatus(
             UUID deploymentId,
-            UpdateDeploymentStatusRequest request
+            UpdateDeploymentStatusRequest request,
+            UUID authenticatedVehicleId
     ) {
         Deployment deployment = deploymentRepository.findByIdForUpdate(deploymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Deployment not found"));
+
+        VehicleAccessGuard.requireOwner(
+                authenticatedVehicleId, deployment.getVehicle().getId());
 
         if (deployment.getStatus() == request.status()) {
             return DeploymentResponse.from(deployment);

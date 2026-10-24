@@ -279,10 +279,13 @@ class M9KafkaIntegrationTest {
         assertEquals(malformedEnvelope, deadLetter.value());
     }
 
+    @Autowired private dev.heimdall.deployment.DeploymentRepository deploymentRepository;
+
     private void transition(UUID deploymentId, DeploymentStatus status) {
         deploymentService.updateStatus(
                 deploymentId,
-                new UpdateDeploymentStatusRequest(status, null)
+                new UpdateDeploymentStatusRequest(status, null),
+                deploymentRepository.findById(deploymentId).orElseThrow().getVehicle().getId()
         );
     }
 

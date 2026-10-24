@@ -1,5 +1,6 @@
 package dev.heimdall.api;
 
+import dev.heimdall.vehicleauth.VehicleAuthorizationException;
 import dev.heimdall.vehicleauth.VehicleAuthenticationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -10,6 +11,11 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+
+    @ExceptionHandler(VehicleAuthorizationException.class)
+    public ProblemDetail handleVehicleAuthorization() {
+        return problem(HttpStatus.FORBIDDEN, "Vehicle access forbidden");
+    }
 
     @ExceptionHandler(VehicleAuthenticationException.class)
     public ProblemDetail handleVehicleAuthentication() {

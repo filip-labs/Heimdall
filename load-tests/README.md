@@ -5,6 +5,19 @@ simulator rather than replacing it: k6 produces repeatable request-rate and
 latency measurements, while the simulator exercises the longer-lived OTA
 agent behavior, artifact verification, retries, and status transitions.
 
+## Backend revision compatibility
+
+Heartbeat, deployment-polling and mixed scripts here are historical **M10**
+workloads. They resolve vehicles by VIN and do not retain one-time provisioning
+credentials or acquire tokens. M11A A2 protects those endpoints, so these scripts
+receive **401** against the current backend. Use the documented M10 benchmark SHA
+with its matching harness for historical reproduction. Registration-only traffic
+still uses trusted provisioning. Auth-aware k6 workloads are deferred; the Go
+simulator supports authentication and refresh for current functional verification.
+Historical result files are unchanged, and M11 measurements must not be presented
+as directly equivalent to those M10 results. See
+[Vehicle identity](../docs/vehicle-identity.md#historical-m10-tooling).
+
 ## Prerequisites
 
 - Heimdall and its local dependencies are running.

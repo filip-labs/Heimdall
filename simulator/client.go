@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	neturl "net/url"
 )
 
 type Deployment struct {
@@ -27,6 +26,7 @@ type vehiclePayload struct {
 }
 
 type vehicleResponse struct {
+	Credential      string `json:"credential"`
 	ID              string `json:"id"`
 	VIN             string `json:"vin"`
 	SoftwareVersion string `json:"softwareVersion"`
@@ -49,7 +49,7 @@ func (a *VehicleAgent) sendHeartbeat(ctx context.Context) error {
 		return err
 	}
 
-	response, err := a.Client.Do(request)
+	response, err := a.doVehicleRequest(request)
 	if err != nil {
 		return err
 	}
@@ -57,9 +57,8 @@ func (a *VehicleAgent) sendHeartbeat(ctx context.Context) error {
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf(
-			"heartbeat returned %d: %s",
+			"heartbeat returned HTTP %d",
 			response.StatusCode,
-			readResponseBody(response.Body),
 		)
 	}
 
@@ -85,7 +84,7 @@ func (a *VehicleAgent) getActiveDeployment(
 		return nil, err
 	}
 
-	response, err := a.Client.Do(request)
+	response, err := a.doVehicleRequest(request)
 	if err != nil {
 		return nil, err
 	}
@@ -97,16 +96,15 @@ func (a *VehicleAgent) getActiveDeployment(
 
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf(
-			"deployment lookup returned %d: %s",
+			"deployment lookup returned HTTP %d",
 			response.StatusCode,
-			readResponseBody(response.Body),
 		)
 	}
 
 	var deployment Deployment
 
 	if err := json.NewDecoder(response.Body).Decode(&deployment); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid deployment response")
 	}
 
 	return &deployment, nil
@@ -149,7 +147,7 @@ func (a *VehicleAgent) updateDeploymentStatus(
 
 	request.Header.Set("Content-Type", "application/json")
 
-	response, err := a.Client.Do(request)
+	response, err := a.doVehicleRequest(request)
 	if err != nil {
 		return err
 	}
@@ -157,9 +155,8 @@ func (a *VehicleAgent) updateDeploymentStatus(
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf(
-			"status update returned %d: %s",
+			"status update returned HTTP %d",
 			response.StatusCode,
-			readResponseBody(response.Body),
 		)
 	}
 
@@ -176,7 +173,7 @@ func (a *VehicleAgent) postVehicleRegistration(
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return vehicleResponse{}, 0, err
+		return vehicleResponse{}, 0, safeVehicleRequestError(ctx)
 	}
 
 	url := fmt.Sprintf("%s/api/v1/vehicles", a.BaseURL)
@@ -188,14 +185,14 @@ func (a *VehicleAgent) postVehicleRegistration(
 		bytes.NewBuffer(body),
 	)
 	if err != nil {
-		return vehicleResponse{}, 0, err
+		return vehicleResponse{}, 0, safeVehicleRequestError(ctx)
 	}
 
 	request.Header.Set("Content-Type", "application/json")
 
 	response, err := a.Client.Do(request)
 	if err != nil {
-		return vehicleResponse{}, 0, err
+		return vehicleResponse{}, 0, safeVehicleRequestError(ctx)
 	}
 	defer a.closeResponseBody(response.Body)
 
@@ -203,7 +200,7 @@ func (a *VehicleAgent) postVehicleRegistration(
 		var vehicle vehicleResponse
 
 		if err := json.NewDecoder(response.Body).Decode(&vehicle); err != nil {
-			return vehicleResponse{}, 0, err
+			return vehicleResponse{}, 0, safeVehicleRequestError(ctx)
 		}
 
 		return vehicle, response.StatusCode, nil
@@ -214,65 +211,13 @@ func (a *VehicleAgent) postVehicleRegistration(
 	}
 
 	return vehicleResponse{}, response.StatusCode, fmt.Errorf(
-		"vehicle registration returned %d: %s",
+		"vehicle registration returned %d",
 		response.StatusCode,
-		readResponseBody(response.Body),
 	)
-}
-
-func (a *VehicleAgent) getVehicleByVIN(
-	ctx context.Context,
-) (vehicleResponse, error) {
-	url := fmt.Sprintf(
-		"%s/api/v1/vehicles/by-vin/%s",
-		a.BaseURL,
-		neturl.PathEscape(a.VIN),
-	)
-
-	request, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodGet,
-		url,
-		nil,
-	)
-	if err != nil {
-		return vehicleResponse{}, err
-	}
-
-	response, err := a.Client.Do(request)
-	if err != nil {
-		return vehicleResponse{}, err
-	}
-	defer a.closeResponseBody(response.Body)
-
-	if response.StatusCode != http.StatusOK {
-		return vehicleResponse{}, fmt.Errorf(
-			"vehicle lookup returned %d: %s",
-			response.StatusCode,
-			readResponseBody(response.Body),
-		)
-	}
-
-	var vehicle vehicleResponse
-
-	if err := json.NewDecoder(response.Body).Decode(&vehicle); err != nil {
-		return vehicleResponse{}, err
-	}
-
-	return vehicle, nil
 }
 
 func (a *VehicleAgent) closeResponseBody(body io.Closer) {
 	if err := body.Close(); err != nil {
-		a.logf("failed to close response body: %v", err)
+		a.logf("failed to close response body")
 	}
-}
-
-func readResponseBody(body io.Reader) string {
-	responseBody, err := io.ReadAll(body)
-	if err != nil {
-		return fmt.Sprintf("failed to read response body: %v", err)
-	}
-
-	return string(responseBody)
 }

@@ -41,6 +41,14 @@ class RolloutIntegrationTest {
     static final PostgreSQLContainer postgres =
             new PostgreSQLContainer("postgres:17");
 
+    @Autowired private dev.heimdall.vehicleauth.VehicleTokenService vehicleTokens;
+    @Autowired private dev.heimdall.deployment.DeploymentRepository authDeployments;
+
+    private String deploymentAuthorization(UUID id) {
+        return "Bearer " + vehicleTokens.issue(authDeployments.findById(id).orElseThrow()
+                .getVehicle().getId()).accessToken();
+    }
+
     @Autowired
     private RestTestClient restClient;
 
@@ -1117,6 +1125,7 @@ class RolloutIntegrationTest {
 
         restClient.patch()
                 .uri("/api/v1/deployments/" + deploymentId + "/status")
+                .header("Authorization", deploymentAuthorization(deploymentId))
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(body)
                 .exchange()
