@@ -281,6 +281,66 @@ PROFILE=100 RUN_ID=1001 k6 run load-tests/k6/mixed-fleet.js
 See [Scalability and load testing](docs/scalability-and-load-testing.md) for the
 100/1,000/5,000 profiles, isolated workloads, metrics, and interpretation.
 
+## Backend container image (M12A)
+
+Build from a clean checkout; no local Maven installation or `target/` is needed:
+
+```bash
+docker build -t heimdall:local .
+```
+
+The multi-stage build uses Eclipse Temurin `21-jdk-noble` and the Maven Wrapper
+to package the executable Spring Boot JAR with tests skipped. A BuildKit Maven
+cache speeds up subsequent builds. The final `21-jre-noble` image runs
+`java -jar /app/heimdall.jar` as dedicated UID/GID `10001:10001` (`heimdall`),
+with no Maven or application sources. Both base images are pinned by multi-platform
+manifest digest; update those pins deliberately for Java/OS security updates.
+The JAR is read-only; Java/Tomcat may use
+the runtime temporary directory. No platform is hardcoded.
+
+Direct host development still uses `./mvnw spring-boot:run` with PostgreSQL at
+`localhost:5433` and Kafka at `localhost:9092`. Container execution requires
+reachable dependency endpoints supplied through the environment:
+
+| Variable | Container configuration |
+| --- | --- |
+| `SPRING_DATASOURCE_URL` | For example `jdbc:postgresql://postgres:5432/heimdall` on the dependency network |
+| `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` | Credentials for that database |
+| `SPRING_KAFKA_BOOTSTRAP_SERVERS` | For example `kafka:29092` on the dependency network |
+| `HEIMDALL_SECURITY_VEHICLE_TOKEN_SECRET` | Externally supplied Base64 signing key, at least 32 decoded bytes |
+| `HEIMDALL_SECURITY_VEHICLE_TOKEN_TTL` | Optional; default `5m` |
+| `HEIMDALL_SECURITY_RELEASE_SIGNING_PRIVATE_KEY` | Externally supplied Base64 PKCS#8 DER Ed25519 private key |
+| `HEIMDALL_SECURITY_RELEASE_SIGNING_KEY_ID` | Identifier matching the separately distributed simulator public key |
+
+Generate/configure security keys using the linked M11 setup instructions above.
+Supply secrets at runtime, never as build arguments or committed files. Existing
+Spring environment binding, including `HEIMDALL_KAFKA_ENABLED`, remains available.
+For a manual run, export the variables above and pass them without literal secrets:
+
+```bash
+docker run --rm --name heimdall-backend --network heimdall_default \
+  -p 8080:8080 \
+  -e SPRING_DATASOURCE_URL -e SPRING_DATASOURCE_USERNAME \
+  -e SPRING_DATASOURCE_PASSWORD -e SPRING_KAFKA_BOOTSTRAP_SERVERS \
+  -e HEIMDALL_SECURITY_VEHICLE_TOKEN_SECRET \
+  -e HEIMDALL_SECURITY_VEHICLE_TOKEN_TTL \
+  -e HEIMDALL_SECURITY_RELEASE_SIGNING_PRIVATE_KEY \
+  -e HEIMDALL_SECURITY_RELEASE_SIGNING_KEY_ID \
+  heimdall:local
+```
+
+Start dependencies first with `docker compose up -d postgres kafka`; use the
+actual Compose network name if your project name differs from `heimdall`.
+The image exposes port 8080. Its health contract is HTTP **200** from
+`/actuator/health`; the Docker healthcheck uses curl already present in the
+Temurin runtime, with a 60-second startup allowance. Only `health`, `info` and
+`prometheus` remain exposed. `docker stop --time 60 heimdall-backend` delivers
+SIGTERM directly to Java and allows time for Kafka and Spring's graceful shutdown.
+
+The backend is not yet a Compose service. Full-stack Compose integration and
+observability networking belong to M12B; container CI and publishing belong to
+M12C. The existing Compose and CI workflows are unchanged.
+
 ## Observability
 
 The control plane exposes health, application information, and Prometheus
