@@ -99,7 +99,7 @@ Heimdall currently includes:
 - Source software version snapshot on deployment creation.
 - Idempotent status updates from vehicle agents.
 - Deployment event audit trail.
-- Vehicle restart/reuse by deterministic VIN.
+- Deterministic VINs with explicit fresh provisioning for simulator runs.
 - Staged rollout with target snapshots and health gates.
 - Operator-controlled rollout pause, resume, and cancel.
 - Pessimistic database locking for rollout stage advancement.
@@ -124,7 +124,7 @@ DEPLOYMENT_POLL_INTERVAL=3s
 SIMULATED_FAILURE_VINS=7FC00000000000003
 ```
 
-The simulator generates deterministic VINs, registers or reuses existing backend vehicles, sends heartbeats, polls for active deployments, processes OTA artifacts, and shuts down cleanly on `SIGINT` or `SIGTERM`.
+The simulator generates deterministic VINs, provisions and authenticates vehicles in a fresh disposable backend, sends heartbeats, polls for active deployments, processes OTA artifacts, and shuts down cleanly on `SIGINT` or `SIGTERM`.
 
 `SIMULATED_FAILURE_VINS` is an optional comma-separated VIN list for deterministic OTA installation failures. Targeted vehicles still download the artifact, verify its SHA-256 checksum, report `DOWNLOADED`, report `INSTALLING`, then report `FAILED` with `simulated installation failure` while keeping their previous software version.
 
@@ -213,8 +213,10 @@ Redis is a roadmap item, not an implemented feature.
 ## Vehicle identity foundation (M11A)
 
 Vehicle provisioning now returns a one-time credential, and a dedicated token API
-issues short-lived signed vehicle tokens. Endpoint enforcement follows in the next
-M11A slice. Startup requires `HEIMDALL_SECURITY_VEHICLE_TOKEN_SECRET`; see
+issues short-lived signed vehicle tokens. Heartbeat, active-deployment polling and
+vehicle status callbacks enforce authenticated ownership; the simulator refreshes
+tokens in memory. Repeat runs require fresh disposable vehicle state. Startup
+requires `HEIMDALL_SECURITY_VEHICLE_TOKEN_SECRET`; see
 [Vehicle identity and authentication](docs/vehicle-identity.md) for local setup,
 API behavior, migration strategy and security boundaries.
 

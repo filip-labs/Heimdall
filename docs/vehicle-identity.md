@@ -1,8 +1,8 @@
-# M11A vehicle identity foundation
+# M11A vehicle identity and enforcement
 
 Vehicle creation (`POST /api/v1/vehicles`) remains **trusted provisioning**.
 Restrict access to this operation to trusted infrastructure. Use HTTPS for
-provisioning and authentication outside disposable local environments. This slice
+all vehicle API traffic outside disposable local environments. This implementation
 adds device identity, not user IAM, operator accounts, RBAC or fleet PKI.
 mTLS is intentionally deferred to the M11C evaluation/ADR.
 
@@ -55,8 +55,8 @@ The validator pins HS256, checks the signature and issuer, requires all four
 claims, rejects future issuance and expiration (including equality at the expiry
 boundary), and enforces a canonical UUID subject and a positive lifetime no longer
 than the configured TTL. Time comes from injected `Clock`; tests need no sleeps.
-A token validator returns only the verified vehicle UUID. The next slice must
-compare it to the vehicle owning the requested resource, including deployments.
+The token validator returns only the verified vehicle UUID. Protected operations
+compare that identity to the vehicle owning the requested resource.
 
 ## Configuration
 
@@ -83,11 +83,105 @@ HS256 is a shared-key tradeoff: every verifier holding the key can issue tokens.
 Credential hashing is appropriate here because inputs are high-entropy generated
 secrets, not human passwords. Tokens carry no credential, digest, VIN or roles.
 
-## Scope and next phase
+## Protected operations and ownership
 
-This is the identity/token foundation for #42. Heartbeat, active-deployment polling
-and deployment status updates **do not yet enforce tokens**. The simulator remains
-unchanged and can deserialize the compatible flat provisioning response. The next
-M11A slice must integrate token acquisition/storage in the simulator and enforce
-verified vehicle identity on vehicle-facing operations. Release signing belongs to
-M11B. This foundation does not complete #42.
+These endpoints require `Authorization: Bearer <accessToken>`:
+
+- `POST /api/v1/vehicles/{vehicleId}/heartbeat`
+- `GET /api/v1/vehicles/{vehicleId}/deployments/active`
+- `PATCH /api/v1/deployments/{deploymentId}/status`
+
+A small MVC interceptor authenticates only methods annotated `VehicleAuthenticated`
+before request-body binding or controller execution. It accepts exactly one
+Authorization header, case-insensitive `Bearer`, one space, and one compact JWS.
+Duplicate headers, extra fields, wrong schemes, malformed/expired tokens and bad
+signatures return generic **401**, without token parser details. The HTTP server
+may normalize HTTP field whitespace before application parsing.
+
+The token subject is the identity; URL, VIN and request bodies are never proof of
+identity. Heartbeat and polling require the subject to equal the path vehicle UUID.
+A different authenticated vehicle receives **403**, whether or not the target has
+an active deployment. Deployment status uses the actual deployment owner's UUID:
+the check runs on the same pessimistically locked entity inside the mutation
+transaction, before even the idempotent-status branch. Rejected calls do not
+change vehicle state, deployment history/software version or rollout state.
+A genuinely missing resource returns **404** after identity checks; invalid state
+transitions still return **409**.
+
+Trusted provisioning, release/rollout creation, rollback controls and administrative
+reads remain control-plane operations. They do not use vehicle tokens. Deployment
+status is a vehicle callback, including status reports for rollback deployments.
+Operator IAM and protection of administrative reads remain separate concerns.
+
+## Simulator lifecycle
+
+Each Go agent retains its provisioning credential and access token **only in memory**.
+Bootstrap captures the one-time credential and authenticates before starting
+heartbeat/poll loops. A 409 registration response now fails clearly: VIN lookup
+cannot recover a credential. Use a fresh disposable simulator/database environment
+for repeat runs; back up any data you need before resetting a local environment.
+No credential store or reset endpoint is added. Deterministic VINs and OTA failure
+injection remain unchanged. Never print an agent's internal state or HTTP bodies
+containing secrets; normal simulator errors omit authentication/protected response
+bodies and parser details.
+
+Token caching uses the server's `expiresIn`, anchored before the auth request.
+Agents refresh on the next protected call using a reserve of 20% of the lifetime
+plus one second for JWT timestamp truncation. The reserve is capped at 80% of the
+lifetime so even a 1-second TTL has a positive cache interval (200ms), avoiding an
+immediate refresh loop. An agent coordinates one in-flight refresh shared by its
+heartbeat and deployment loops; waiting callers respect context cancellation.
+Expiry metadata is approximate (JWT dates have second precision), so **401** also
+invalidates the matching token generation, authenticates again and retries the
+original request **once**, replaying status request bodies. A second 401 is surfaced
+and invalidates that token for later calls. A delayed response cannot invalidate a
+newer token generation. **403 never triggers reauthentication**.
+
+## Historical M10 tooling
+
+The existing k6 heartbeat/poll/mixed workloads resolve UUIDs by VIN and do not keep
+provisioning credentials. They are **historical M10 tooling**, incompatible with
+these protected endpoints: against M11A they receive 401. VIN lookup cannot repair
+that. Run historical measurements at their documented M10 commit with its matching
+scripts/configuration. Do not use the current M11A backend as an M10 benchmark target.
+Registration-only workloads still exercise the trusted provisioning boundary.
+
+Historical result files and benchmark SHAs are unchanged. Auth-aware k6 workload
+support and new performance measurements are deferred; do not compare authenticated
+M11 traffic directly to the published M10 numbers. Unit tests of M10 tooling remain
+valid and are run as regression checks, not as authenticated performance evidence.
+
+## A2 verification evidence
+
+Local validation on 2026-10-24 passed 102 Java tests (including 8 new parsing and
+endpoint enforcement tests), simulator tests and the Go race detector, 33 M10B
+checks, 48 M10C checks and 8 load-harness unit tests. A1 token/credential tests and
+existing OTA, rollout and Kafka tests remain enabled.
+
+Two live scenarios used the actual Java 21 application and Go simulator against
+separate disposable PostgreSQL 17 databases, with Kafka disabled and rollout
+evaluation set to 300ms. Each provisioned five deterministic vehicles and ran a
+40% → 100% rollout from 1.0.0 to 2.0.0 using an HTTP-served checksummed artifact.
+An observing local proxy counted token exchanges and protected response statuses;
+credentials and tokens were held in memory and excluded from reported evidence.
+
+| Token TTL | Authenticated vehicles | Minimum token exchanges per vehicle | Outcome |
+|---|---:|---:|---|
+| Default 5m | 5 | 1 | 5 INSTALLED; rollout COMPLETED; 0 HTTP 401/403 |
+| Configured 2s | 5 | 8 | 5 INSTALLED; rollout COMPLETED; 0 HTTP 401/403 |
+
+Both runs verified heartbeat timestamps, final vehicle versions and the exact
+PENDING → DOWNLOADING → DOWNLOADED → INSTALLING → INSTALLED history for every
+deployment. Process logs contained none of the generated provisioning credentials,
+access tokens or signing keys. Temporary processes and databases were removed.
+These are functional checks, not M10 performance measurements.
+
+## Scope and limitations
+
+This implements A1 plus A2 for #42. Keep the issue open until this PR is merged and
+CI is green. Credentials cannot be recovered; rotation/revocation and rate limiting
+remain out of scope. A valid token remains usable until expiry or signing-key change.
+HS256 requires shared signing authority and secure key distribution. HTTPS is
+required outside isolated local testing; no production OEM PKI is claimed.
+Release/artifact signing belongs to **M11B**. mTLS and fleet PKI evaluation remain
+intentionally deferred to **M11C**.

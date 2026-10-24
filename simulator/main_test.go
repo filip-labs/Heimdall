@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -156,6 +157,10 @@ func TestRegisterOrResolveCreatesVehicle(t *testing.T) {
 		writer http.ResponseWriter,
 		request *http.Request,
 	) {
+		if request.URL.Path == "/api/v1/vehicle-auth/token" {
+			_ = json.NewEncoder(writer).Encode(vehicleTokenResponse{AccessToken: "test-access-token", TokenType: "Bearer", ExpiresIn: 300})
+			return
+		}
 		if request.Method != http.MethodPost ||
 			request.URL.Path != "/api/v1/vehicles" {
 			t.Fatalf("unexpected request %s %s", request.Method, request.URL.Path)
@@ -169,6 +174,7 @@ func TestRegisterOrResolveCreatesVehicle(t *testing.T) {
 		writer.Header().Set("Content-Type", "application/json")
 		writer.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(writer).Encode(vehicleResponse{
+			Credential:      "test-provisioning-credential",
 			ID:              "vehicle-1",
 			VIN:             payload.VIN,
 			SoftwareVersion: payload.SoftwareVersion,
@@ -182,63 +188,32 @@ func TestRegisterOrResolveCreatesVehicle(t *testing.T) {
 		t.Fatalf("expected registration to succeed, got %v", err)
 	}
 
+	if agent.credential != "test-provisioning-credential" || agent.token != "test-access-token" {
+		t.Fatal("provisioning credential and access token were not retained")
+	}
 	if agent.ID != "vehicle-1" {
 		t.Fatalf("unexpected vehicle ID %q", agent.ID)
 	}
 }
 
-func TestRegisterOrResolveReusesVehicleOnConflict(t *testing.T) {
+func TestRegisterOrResolveRejectsExistingVehicleWithoutCredential(t *testing.T) {
 	t.Parallel()
-
-	var requests []string
-	var mu sync.Mutex
-
-	server := httptest.NewServer(http.HandlerFunc(func(
-		writer http.ResponseWriter,
-		request *http.Request,
-	) {
-		mu.Lock()
-		requests = append(requests, request.Method+" "+request.URL.Path)
-		mu.Unlock()
-
-		switch {
-		case request.Method == http.MethodPost &&
-			request.URL.Path == "/api/v1/vehicles":
-			writer.WriteHeader(http.StatusConflict)
-		case request.Method == http.MethodGet &&
-			request.URL.Path == "/api/v1/vehicles/by-vin/7FC00000000000001":
-			writer.Header().Set("Content-Type", "application/json")
-			writer.WriteHeader(http.StatusOK)
-			_ = json.NewEncoder(writer).Encode(vehicleResponse{
-				ID:              "existing-vehicle",
-				VIN:             "7FC00000000000001",
-				SoftwareVersion: "1.4.0",
-			})
-		default:
-			t.Fatalf("unexpected request %s %s", request.Method, request.URL.Path)
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/vehicles" {
+			t.Error("unexpected credential recovery attempt")
 		}
+		w.WriteHeader(http.StatusConflict)
 	}))
 	defer server.Close()
-
 	agent := newTestAgent(server.URL, "7FC00000000000001", "1.3.0")
-
-	if err := agent.registerOrResolve(context.Background()); err != nil {
-		t.Fatalf("expected conflict resolution to succeed, got %v", err)
+	err := agent.registerOrResolve(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "cannot authenticate without its provisioning credential") {
+		t.Fatalf("expected explicit provisioning error, got %v", err)
 	}
-
-	if agent.ID != "existing-vehicle" {
-		t.Fatalf("unexpected vehicle ID %q", agent.ID)
-	}
-
-	if agent.SoftwareVersion != "1.4.0" {
-		t.Fatalf(
-			"expected software version from existing vehicle, got %q",
-			agent.SoftwareVersion,
-		)
-	}
-
-	if len(requests) != 2 {
-		t.Fatalf("expected 2 requests, got %d", len(requests))
+	if requests.Load() != 1 || agent.ID != "" {
+		t.Fatal("existing identity was silently reused")
 	}
 }
 
@@ -278,6 +253,10 @@ func TestBootstrapFleetInitializesDistinctVehicles(t *testing.T) {
 		writer http.ResponseWriter,
 		request *http.Request,
 	) {
+		if request.URL.Path == "/api/v1/vehicle-auth/token" {
+			_ = json.NewEncoder(writer).Encode(vehicleTokenResponse{AccessToken: "test-access-token", TokenType: "Bearer", ExpiresIn: 300})
+			return
+		}
 		if request.Method != http.MethodPost ||
 			request.URL.Path != "/api/v1/vehicles" {
 			t.Fatalf("unexpected request %s %s", request.Method, request.URL.Path)
@@ -299,6 +278,7 @@ func TestBootstrapFleetInitializesDistinctVehicles(t *testing.T) {
 		writer.Header().Set("Content-Type", "application/json")
 		writer.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(writer).Encode(vehicleResponse{
+			Credential:      "test-provisioning-credential",
 			ID:              fmt.Sprintf("vehicle-%s", payload.VIN),
 			VIN:             payload.VIN,
 			SoftwareVersion: payload.SoftwareVersion,
@@ -779,6 +759,8 @@ func newOTATestAgent(
 	simulateInstallFailure bool,
 ) *VehicleAgent {
 	agent := newTestAgent(server.URL, vin, softwareVersion)
+	agent.ID = "vehicle-1"
+	agent.credential = "test-provisioning-credential"
 	agent.Client = server.Client()
 	agent.Downloader.client = server.Client()
 	agent.SimulateInstallFailure = simulateInstallFailure
@@ -799,6 +781,8 @@ func newOTATestServer(
 		request *http.Request,
 	) {
 		switch {
+		case request.URL.Path == "/api/v1/vehicle-auth/token":
+			_ = json.NewEncoder(writer).Encode(vehicleTokenResponse{AccessToken: "test-access-token", TokenType: "Bearer", ExpiresIn: 300})
 		case request.Method == http.MethodGet &&
 			request.URL.Path == "/artifact.bin":
 			writer.WriteHeader(http.StatusOK)
@@ -806,6 +790,9 @@ func newOTATestServer(
 
 		case request.Method == http.MethodPatch &&
 			request.URL.Path == "/api/v1/deployments/deployment-1/status":
+			if request.Header.Get("Authorization") != "Bearer test-access-token" {
+				t.Error("status callback missing vehicle token")
+			}
 			var update deploymentStatusUpdate
 			if err := json.NewDecoder(request.Body).Decode(&update); err != nil {
 				t.Fatalf("failed to decode status update: %v", err)

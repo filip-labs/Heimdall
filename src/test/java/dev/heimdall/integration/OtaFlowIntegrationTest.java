@@ -37,6 +37,14 @@ class OtaFlowIntegrationTest {
     static final PostgreSQLContainer postgres =
             new PostgreSQLContainer("postgres:17");
 
+    @Autowired private dev.heimdall.vehicleauth.VehicleTokenService vehicleTokens;
+    @Autowired private dev.heimdall.deployment.DeploymentRepository authDeployments;
+
+    private String deploymentAuthorization(UUID id) {
+        return "Bearer " + vehicleTokens.issue(authDeployments.findById(id).orElseThrow()
+                .getVehicle().getId()).accessToken();
+    }
+
     @Autowired
     private RestTestClient restClient;
 
@@ -244,6 +252,7 @@ class OtaFlowIntegrationTest {
 
         restClient.patch()
                 .uri("/api/v1/deployments/" + deployment.id() + "/status")
+                .header("Authorization", deploymentAuthorization(deployment.id()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(Map.of("status", "INSTALLED"))
                 .exchange()
@@ -658,6 +667,7 @@ class OtaFlowIntegrationTest {
 
         return restClient.patch()
                 .uri("/api/v1/deployments/" + deploymentId + "/status")
+                .header("Authorization", deploymentAuthorization(deploymentId))
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(body)
                 .exchange()

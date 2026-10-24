@@ -1,6 +1,7 @@
 package dev.heimdall.deployment;
 
 import jakarta.validation.Valid;
+import dev.heimdall.vehicleauth.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -39,12 +40,14 @@ public class DeploymentController {
         return deploymentService.getAll();
     }
 
+    @VehicleAuthenticated
     @PatchMapping("/{id}/status")
     public DeploymentResponse updateStatus(
             @PathVariable UUID id,
-            @Valid @RequestBody UpdateDeploymentStatusRequest request
+            @Valid @RequestBody UpdateDeploymentStatusRequest request,
+            @RequestAttribute(VehicleRequestAuthenticator.IDENTITY) UUID authenticatedVehicleId
     ) {
-        return deploymentService.updateStatus(id, request);
+        return deploymentService.updateStatus(id, request, authenticatedVehicleId);
     }
 
     @PostMapping("/{id}/rollback")
