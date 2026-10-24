@@ -178,6 +178,8 @@ Signatures do not impose monotonic/anti-rollback policy or bind to a vehicle; an
 explicitly deployed older signed version can be installed. This supports the
 existing rollback model. Authentication and artifact authenticity are separate.
 
-mTLS and fleet PKI evaluation remain M11C. No production OEM PKI is claimed.
+M11C documents the [threat model](threat-model.md), [security regression matrix](security-regression.md)
+and [ADR-001](adr/001-mtls-device-authentication.md), which intentionally defers mTLS
+in the current portfolio scope. No production OEM PKI is claimed.
 Historical M10 evidence remains unchanged and does not measure this signing flow;
 M11 signing performance must not be presented as equivalent to M10 results.
