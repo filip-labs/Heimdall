@@ -3,6 +3,7 @@ package dev.heimdall.vehicle;
 import dev.heimdall.api.ConflictException;
 import dev.heimdall.api.ResourceNotFoundException;
 import dev.heimdall.messaging.DomainEventRecorder;
+import dev.heimdall.vehicleauth.VehicleCredentialService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,9 +18,10 @@ public class VehicleService {
 
     private final VehicleRepository vehicleRepository;
     private final DomainEventRecorder eventRecorder;
+    private final VehicleCredentialService credentials;
 
     @Transactional
-    public VehicleResponse create(CreateVehicleRequest request) {
+    public VehicleProvisioningResponse create(CreateVehicleRequest request) {
         if (vehicleRepository.existsByVin(request.vin())) {
             throw new ConflictException("Vehicle with VIN already exists");
         }
@@ -29,9 +31,11 @@ public class VehicleService {
                 request.softwareVersion()
         );
 
+        String credential = credentials.generate();
+        vehicle.provisionCredential(credentials.hash(credential));
         Vehicle savedVehicle = vehicleRepository.save(vehicle);
         eventRecorder.vehicleRegistered(savedVehicle);
-        return VehicleResponse.from(savedVehicle);
+        return new VehicleProvisioningResponse(VehicleResponse.from(savedVehicle), credential);
     }
 
     @Transactional

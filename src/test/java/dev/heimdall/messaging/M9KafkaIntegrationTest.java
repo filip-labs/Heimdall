@@ -159,7 +159,7 @@ class M9KafkaIntegrationTest {
     void shouldPublishPendingEnvelopeAndMarkItPublished() {
         VehicleResponse vehicle = vehicleService.create(
                 new CreateVehicleRequest("7FC90000000000003", "1.0.0")
-        );
+        ).vehicle();
         OutboxEvent pending = outboxRepository.findAll().getFirst();
         assertNull(pending.getPublishedAt());
 
@@ -178,7 +178,7 @@ class M9KafkaIntegrationTest {
     void shouldCreateOneLogicalTerminalTransitionEventForDuplicateReport() {
         VehicleResponse vehicle = vehicleService.create(
                 new CreateVehicleRequest("7FC90000000000004", "1.0.0")
-        );
+        ).vehicle();
         SoftwareRelease release = releaseRepository.save(new SoftwareRelease(
                 "2.0.0",
                 "M9 test release",

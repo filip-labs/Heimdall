@@ -210,6 +210,14 @@ The Postman collection in `postman/Heimdall.postman_collection.json` covers the 
 
 Redis is a roadmap item, not an implemented feature.
 
+## Vehicle identity foundation (M11A)
+
+Vehicle provisioning now returns a one-time credential, and a dedicated token API
+issues short-lived signed vehicle tokens. Endpoint enforcement follows in the next
+M11A slice. Startup requires `HEIMDALL_SECURITY_VEHICLE_TOKEN_SECRET`; see
+[Vehicle identity and authentication](docs/vehicle-identity.md) for local setup,
+API behavior, migration strategy and security boundaries.
+
 ## Running Locally
 
 Start PostgreSQL, Kafka, Prometheus, and Grafana:
@@ -227,9 +235,11 @@ username: heimdall
 password: heimdall
 ```
 
-Start the Spring Boot control plane:
+Start the Spring Boot control plane with a local signing key (see
+[Vehicle identity](docs/vehicle-identity.md) for key management):
 
 ```bash
+export HEIMDALL_SECURITY_VEHICLE_TOKEN_SECRET="$(openssl rand -base64 32)"
 ./mvnw spring-boot:run
 ```
 
@@ -395,6 +405,7 @@ go test -race ./...
 - [Postman API collection](postman/Heimdall.postman_collection.json)
 - [Architecture overview](#current-architecture)
 - [Scalability and load testing](docs/scalability-and-load-testing.md)
+- [Vehicle identity and authentication](docs/vehicle-identity.md)
 
 ## Roadmap
 

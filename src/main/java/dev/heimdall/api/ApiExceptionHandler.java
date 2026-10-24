@@ -1,5 +1,6 @@
 package dev.heimdall.api;
 
+import dev.heimdall.vehicleauth.VehicleAuthenticationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.validation.FieldError;
@@ -9,6 +10,11 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+
+    @ExceptionHandler(VehicleAuthenticationException.class)
+    public ProblemDetail handleVehicleAuthentication() {
+        return problem(HttpStatus.UNAUTHORIZED, "Vehicle authentication failed");
+    }
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ProblemDetail handleResourceNotFound(ResourceNotFoundException exception) {
