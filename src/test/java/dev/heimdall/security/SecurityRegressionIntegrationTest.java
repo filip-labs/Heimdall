@@ -82,9 +82,22 @@ class SecurityRegressionIntegrationTest {
                 .expectStatus().isOk().expectBody().jsonPath("$.lastSeenAt").isNotEmpty();
         var polled = client.get().uri(poll(vehicle)).header("Authorization", bearer).exchange()
                 .expectStatus().isOk().expectBody(DeploymentResponse.class).returnResult().getResponseBody();
-        assertThat(polled).isEqualTo(deployment);
+        assertThat(polled.id()).isEqualTo(deployment.id());
+        assertThat(polled.vehicleId()).isEqualTo(deployment.vehicleId());
+        assertThat(polled.vin()).isEqualTo(deployment.vin());
+        assertThat(polled.sourceSoftwareVersion()).isEqualTo(deployment.sourceSoftwareVersion());
+        assertThat(polled.releaseId()).isEqualTo(deployment.releaseId());
+        assertThat(polled.targetSoftwareVersion()).isEqualTo(deployment.targetSoftwareVersion());
+        assertThat(polled.artifactUrl()).isEqualTo(deployment.artifactUrl());
+        assertThat(polled.checksum()).isEqualTo(deployment.checksum());
         assertThat(polled.signatureAlgorithm()).isEqualTo("Ed25519");
+        assertThat(polled.signatureAlgorithm()).isEqualTo(deployment.signatureAlgorithm());
+        assertThat(polled.signingKeyId()).isEqualTo(deployment.signingKeyId());
+        assertThat(polled.signature()).isEqualTo(deployment.signature());
         assertThat(polled.signature()).matches("[A-Za-z0-9_-]{86}");
+        assertThat(polled.status()).isEqualTo(DeploymentStatus.PENDING);
+        assertThat(polled.failureReason()).isNull();
+        assertThat(polled.rollbackOfDeploymentId()).isNull();
         for (String next : List.of("DOWNLOADING", "DOWNLOADED", "INSTALLING", "INSTALLED")) {
             client.patch().uri(status(deployment.id())).header("Authorization", bearer)
                     .body(Map.of("status", next)).exchange().expectStatus().isOk();
