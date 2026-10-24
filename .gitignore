@@ -40,3 +40,8 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+### JavaScript workspaces ###
+node_modules/
+dashboard/dist/
+*.tsbuildinfo
