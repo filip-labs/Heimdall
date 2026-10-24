@@ -861,7 +861,7 @@ class RolloutIntegrationTest {
                         "version", version,
                         "description", "Rollout integration test release",
                         "artifactUrl", "https://updates.heimdall.dev/" + version + ".bin",
-                        "checksum", "abc123"
+                        "checksum", "ab".repeat(32)
                 ))
                 .exchange()
                 .expectStatus().isCreated()

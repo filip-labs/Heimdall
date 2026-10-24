@@ -576,7 +576,7 @@ class OtaFlowIntegrationTest {
                         "version", version,
                         "description", "Integration test release",
                         "artifactUrl", "https://updates.heimdall.dev/" + version + ".bin",
-                        "checksum", "abc123"
+                        "checksum", "ab".repeat(32)
                 ))
                 .exchange()
                 .expectStatus().isCreated()

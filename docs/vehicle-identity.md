@@ -183,5 +183,5 @@ CI is green. Credentials cannot be recovered; rotation/revocation and rate limit
 remain out of scope. A valid token remains usable until expiry or signing-key change.
 HS256 requires shared signing authority and secure key distribution. HTTPS is
 required outside isolated local testing; no production OEM PKI is claimed.
-Release/artifact signing belongs to **M11B**. mTLS and fleet PKI evaluation remain
+Release/artifact signing is implemented in **M11B**; see [OTA security](ota-security.md). mTLS and fleet PKI evaluation remain
 intentionally deferred to **M11C**.

@@ -12,7 +12,7 @@ Heimdall has two main parts:
 - A Spring Boot control plane that stores vehicle, release, deployment, event, and rollout state in PostgreSQL.
 - A Go fleet simulator that runs many autonomous vehicle agents in one process.
 
-The control plane exposes REST APIs for registering vehicles, receiving heartbeats, creating software releases, deploying releases to vehicles, and orchestrating staged fleet rollouts. The simulator registers deterministic VINs, sends heartbeats, polls for active deployments, downloads OTA artifacts, verifies SHA-256 checksums, and reports deployment status back to the API.
+The control plane exposes REST APIs for registering vehicles, receiving heartbeats, creating software releases, deploying releases to vehicles, and orchestrating staged fleet rollouts. The simulator registers deterministic VINs, sends heartbeats, polls for active deployments, downloads OTA artifacts, verifies SHA-256 integrity and Ed25519 release signatures, and reports deployment status back to the API.
 
 ## Why Heimdall Exists
 
@@ -93,7 +93,7 @@ A deployment can move to `FAILED` from any non-terminal state when artifact down
 
 Heimdall currently includes:
 
-- SHA-256 artifact verification before install.
+- SHA-256 integrity and Ed25519 manifest verification before install.
 - Transient artifact download retry with exponential backoff.
 - Retry only for request-level transient errors and HTTP 5xx gateway/server failures.
 - Source software version snapshot on deployment creation.
@@ -126,7 +126,7 @@ SIMULATED_FAILURE_VINS=7FC00000000000003
 
 The simulator generates deterministic VINs, provisions and authenticates vehicles in a fresh disposable backend, sends heartbeats, polls for active deployments, processes OTA artifacts, and shuts down cleanly on `SIGINT` or `SIGTERM`.
 
-`SIMULATED_FAILURE_VINS` is an optional comma-separated VIN list for deterministic OTA installation failures. Targeted vehicles still download the artifact, verify its SHA-256 checksum, report `DOWNLOADED`, report `INSTALLING`, then report `FAILED` with `simulated installation failure` while keeping their previous software version.
+`SIMULATED_FAILURE_VINS` is an optional comma-separated VIN list for deterministic OTA installation failures. Targeted vehicles still download the artifact, verify its SHA-256 checksum and Ed25519 signature, report `DOWNLOADED`, report `INSTALLING`, then report `FAILED` with `simulated installation failure` while keeping their previous software version.
 
 ## Staged Rollouts
 
@@ -220,6 +220,14 @@ requires `HEIMDALL_SECURITY_VEHICLE_TOKEN_SECRET`; see
 [Vehicle identity and authentication](docs/vehicle-identity.md) for local setup,
 API behavior, migration strategy and security boundaries.
 
+## Signed OTA releases (M11B)
+
+New releases require a real SHA-256 digest and receive an Ed25519 signature.
+Vehicles verify the signed version/digest manifest using a separately configured
+public key before installation. Unsigned historical releases fail closed, including
+rollback targets. See [OTA security](docs/ota-security.md) for the canonical format,
+local key generation, required backend/simulator configuration and limitations.
+
 ## Running Locally
 
 Start PostgreSQL, Kafka, Prometheus, and Grafana:
@@ -237,7 +245,9 @@ username: heimdall
 password: heimdall
 ```
 
-Start the Spring Boot control plane with a local signing key (see
+First generate/configure the backend Ed25519 signing key and simulator public key
+as described in [OTA security](docs/ota-security.md#local-key-generation-and-configuration).
+Start the Spring Boot control plane with its separate vehicle-token signing key (see
 [Vehicle identity](docs/vehicle-identity.md) for key management):
 
 ```bash
@@ -408,6 +418,7 @@ go test -race ./...
 - [Architecture overview](#current-architecture)
 - [Scalability and load testing](docs/scalability-and-load-testing.md)
 - [Vehicle identity and authentication](docs/vehicle-identity.md)
+- [OTA integrity and authenticity](docs/ota-security.md)
 
 ## Roadmap
 

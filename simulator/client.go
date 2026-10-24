@@ -10,6 +10,9 @@ import (
 )
 
 type Deployment struct {
+	SignatureAlgorithm    string `json:"signatureAlgorithm"`
+	SigningKeyID          string `json:"signingKeyId"`
+	Signature             string `json:"signature"`
 	ID                    string `json:"id"`
 	VehicleID             string `json:"vehicleId"`
 	VIN                   string `json:"vin"`

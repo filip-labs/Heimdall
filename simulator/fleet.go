@@ -36,6 +36,7 @@ func bootstrapFleet(
 				BaseURL:                config.BaseURL,
 				Client:                 client,
 				Downloader:             downloader,
+				ReleaseVerifier:        config.ReleaseVerifier,
 				HeartbeatInterval:      config.HeartbeatInterval,
 				DeploymentPollInterval: config.DeploymentPollInterval,
 				SimulateInstallFailure: isSimulatedFailureVIN(

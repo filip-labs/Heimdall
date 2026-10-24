@@ -94,7 +94,11 @@ func (a *VehicleAgent) downloadDeploymentArtifact(
 		return "", err
 	}
 
-	a.logf("artifact verified")
+	if err := a.ReleaseVerifier.verify(deployment); err != nil {
+		a.removeTemporaryArtifact(artifactPath)
+		return "", err
+	}
+	a.logf("artifact integrity and authenticity verified")
 
 	return artifactPath, nil
 }
