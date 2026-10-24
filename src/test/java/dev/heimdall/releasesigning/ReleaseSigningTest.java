@@ -35,6 +35,16 @@ class ReleaseSigningTest {
         assertThat(verifies(publicKey, bytes, signed.signature())).isTrue();
     }
 
+    @Test void acceptsNextLineWithGoCompatibleCanonicalBytes() {
+        // Shared with Go: NUL prefix, uint16 byte length 2, UTF-8 C2 85, digest.
+        String expectedHex = "4845494d44414c4c2d4f54412d52454c454153452d5631000002c285" + CHECKSUM;
+        assertThat("\u0085".isBlank()).isFalse();
+        for (String checksum : List.of(CHECKSUM, CHECKSUM.toUpperCase(Locale.ROOT))) {
+            byte[] manifest = ReleaseManifest.canonicalBytes("\u0085", checksum);
+            assertThat(HexFormat.of().formatHex(manifest)).isEqualTo(expectedHex);
+        }
+    }
+
     @Test void manifestIsDeterministicNormalizesHexAndBindsVersionAndDigest() {
         byte[] bytes = ReleaseManifest.canonicalBytes("2.0.0", CHECKSUM);
         assertThat(bytes).isEqualTo(ReleaseManifest.canonicalBytes("2.0.0", CHECKSUM.toUpperCase(Locale.ROOT)));

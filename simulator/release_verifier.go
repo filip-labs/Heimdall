@@ -98,7 +98,7 @@ func utf16Units(value string) int {
 }
 func javaBlank(value string) bool {
 	for _, r := range value {
-		whitespace := (unicode.IsSpace(r) && r != '\u00a0' && r != '\u2007' && r != '\u202f') || (r >= 0x1c && r <= 0x1f)
+		whitespace := (unicode.IsSpace(r) && r != '\u0085' && r != '\u00a0' && r != '\u2007' && r != '\u202f') || (r >= 0x1c && r <= 0x1f)
 		if !whitespace {
 			return false
 		}

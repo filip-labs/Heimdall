@@ -77,6 +77,20 @@ func TestReleaseManifestAndSignatureMatchSharedJavaVector(t *testing.T) {
 	}
 }
 
+func TestReleaseManifestAcceptsNextLineWithJavaCompatibleCanonicalBytes(t *testing.T) {
+	// Shared with ReleaseSigningTest: NUL prefix, uint16 byte length 2, UTF-8 C2 85, digest.
+	expectedHex := "4845494d44414c4c2d4f54412d52454c454153452d5631000002c285" + strings.Repeat("ab", 32)
+	for _, checksum := range []string{strings.Repeat("ab", 32), strings.Repeat("AB", 32)} {
+		manifest, err := releaseManifest("\u0085", checksum)
+		if err != nil {
+			t.Fatalf("Java accepts U+0085; manifest builder rejected it: %v", err)
+		}
+		if hex.EncodeToString(manifest) != expectedHex {
+			t.Fatal("U+0085 canonical bytes differ from the shared Java expectation")
+		}
+	}
+}
+
 func TestReleasePublicKeyConfigurationFailsClosed(t *testing.T) {
 	public, _ := x509.MarshalPKIXPublicKey(publicTestPrivateKey().Public())
 	ec, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
