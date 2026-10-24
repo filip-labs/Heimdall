@@ -2,7 +2,9 @@ package dev.heimdall.vehicle;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -16,11 +18,12 @@ public class VehicleController {
     private final VehicleService vehicleService;
 
     @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public VehicleResponse create(
+    public ResponseEntity<VehicleProvisioningResponse> create(
             @Valid @RequestBody CreateVehicleRequest request
     ) {
-        return vehicleService.create(request);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .cacheControl(CacheControl.noStore())
+                .body(vehicleService.create(request));
     }
 
     @PostMapping("/{id}/heartbeat")

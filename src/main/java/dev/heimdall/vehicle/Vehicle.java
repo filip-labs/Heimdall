@@ -1,5 +1,6 @@
 package dev.heimdall.vehicle;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -35,6 +36,17 @@ public class Vehicle {
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+
+    @JsonIgnore
+    @Column(name = "credential_hash", length = 64)
+    private String credentialHash;
+
+    public void provisionCredential(String credentialHash) {
+        if (this.credentialHash != null) {
+            throw new IllegalStateException("Vehicle already provisioned");
+        }
+        this.credentialHash = credentialHash;
+    }
 
     public Vehicle(String vin, String softwareVersion) {
         Instant now = Instant.now();

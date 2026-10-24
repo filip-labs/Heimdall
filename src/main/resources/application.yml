@@ -14,6 +14,9 @@ spring:
     properties:
       hibernate:
         format_sql: true
+        # java-jwt also brings Jackson 2; outbox JsonNode values use Jackson 3.
+        type:
+          json_format_mapper: jackson3
 
   flyway:
     enabled: true
@@ -43,6 +46,10 @@ management:
         include: health,info,prometheus
 
 heimdall:
+  security:
+    vehicle-token:
+      secret: ${HEIMDALL_SECURITY_VEHICLE_TOKEN_SECRET:}
+      ttl: ${HEIMDALL_SECURITY_VEHICLE_TOKEN_TTL:5m}
   vehicle:
     offline-threshold: 30s
     offline-check-interval: 10s

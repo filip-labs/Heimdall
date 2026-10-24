@@ -37,7 +37,7 @@ class PerformanceMetricsIntegrationTest {
     @Test
     void shouldCountCommittedDeploymentCreation() {
         VehicleResponse vehicle = vehicleService.create(
-                new CreateVehicleRequest("7K600000000000001", "1.0.0"));
+                new CreateVehicleRequest("7K600000000000001", "1.0.0")).vehicle();
         SoftwareReleaseResponse release = releaseService.create(
                 new CreateSoftwareReleaseRequest(
                         "2.0.0",
