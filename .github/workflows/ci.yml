@@ -160,3 +160,28 @@ jobs:
           if [[ -s .env ]]; then
             docker compose down --volumes --remove-orphans
           fi
+
+  dashboard:
+    name: Operator Dashboard
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - name: Install dashboard dependencies
+        run: npm ci
+      - name: Validate dashboard
+        run: |
+          npm run typecheck
+          npm run lint
+          npm run format:check
+          npm test
+          npm run build

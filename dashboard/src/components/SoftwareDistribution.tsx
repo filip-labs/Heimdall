@@ -1,0 +1,43 @@
+import type { Vehicle } from "../types/api";
+import { distribution } from "../utils/domain";
+import { number } from "../utils/format";
+export function SoftwareDistribution({ vehicles }: { vehicles: Vehicle[] }) {
+  const mix = distribution(vehicles);
+  return (
+    <>
+      <h2>
+        {mix[0]
+          ? `${mix[0].percent.toFixed(0)}% of the fleet runs ${mix[0].version}.`
+          : "No software distribution yet"}
+      </h2>
+      <p className="muted small">Version mix · all registered vehicles</p>
+      <div className="river" aria-label="Software version distribution">
+        {mix.map((v, i) => (
+          <div
+            key={v.version}
+            className={`version-color v${i % 5}`}
+            style={{ width: `${v.percent}%` }}
+            title={`${v.version}: ${v.count} vehicles (${v.percent.toFixed(2)}%)`}
+          >
+            {v.percent >= 12 && <span>{v.percent.toFixed(0)}%</span>}
+          </div>
+        ))}
+      </div>
+      <div className="distribution-legend">
+        {mix.map((v, i) => (
+          <div key={v.version}>
+            <strong>{number(v.count)}</strong>
+            <span>
+              <i className={`swatch version-color v${i % 5}`} />
+              on {v.version} · {v.percent.toFixed(1)}%
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="panel-footer">
+        <span>Version spread</span>
+        <strong>{mix.length} active versions</strong>
+      </div>
+    </>
+  );
+}

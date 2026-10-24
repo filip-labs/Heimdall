@@ -62,6 +62,8 @@ class OtaFlowIntegrationTest {
                 deployment.status()
         );
         assertEquals("1.0.0", deployment.sourceSoftwareVersion());
+        assertNull(deployment.rolloutId());
+        assertNull(deployment.rolloutStageId());
         assertEventHistory(
                 deployment.id(),
                 new ExpectedEvent(null, DeploymentStatus.PENDING, null)
