@@ -1,12 +1,149 @@
-import type { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
-import { time } from '../utils/format';
-export function Status({value}:{value:string}) { const tone = ['ONLINE','INSTALLED','COMPLETED'].includes(value) ? 'success' : ['FAILED','OFFLINE'].includes(value) ? 'danger' : value==='PAUSED' ? 'warning' : ['RUNNING','DOWNLOADING','DOWNLOADED','INSTALLING'].includes(value) ? 'active' : 'neutral'; return <span className={`status ${tone}`}><span aria-hidden="true" className="dot"/>{value.replaceAll('_',' ')}</span>; }
-export function Header({eyebrow,title,description,actions}:{eyebrow:string;title:string;description:string;actions?:ReactNode}) { return <header className="page-header"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p className="muted">{description}</p></div><div className="actions">{actions}</div></header>; }
-export function Panel({label,title,children,dark=false,className=''}:{label:string;title?:string;children:ReactNode;dark?:boolean;className?:string}) { return <section className={`panel ${dark?'dark':''} ${className}`}><p className="eyebrow">{label}</p>{title && <h2>{title}</h2>}{children}</section>; }
-export function Empty({title,children,to,action}:{title:string;children:ReactNode;to?:string;action?:string}) { return <div className="empty"><h2>{title}</h2><p className="muted">{children}</p>{to && <Link className="button accent" to={to}>{action}</Link>}</div>; }
-export function Loading() { return <div role="status" aria-label="Loading operator data" className="skeleton"><div/><div/><div/><p>Loading control plane data…</p></div>; }
-export function ErrorState({message,retry,stale=false}:{message?:string;retry:()=>void;stale?:boolean}) { return message ? <div role="alert" className="notice danger"><strong>{stale?'Showing last received data. ':''}{message}</strong><button onClick={retry}>Retry</button></div> : null; }
-export function Timestamp({value}:{value:string|null}) { return <time title={value??'No heartbeat received'} dateTime={value??undefined}>{time(value)}</time>; }
-export function Meta({label,children}:{label:string;children:ReactNode}) { return <div className="meta"><span className="muted">{label}</span><div>{children}</div></div>; }
-export function Freshness({value}:{value?:Date}) { return <p className="freshness">{value?`Updated ${value.toLocaleTimeString()} · refreshes every 8 seconds`:'Connecting to control plane'} · {Intl.DateTimeFormat().resolvedOptions().timeZone}</p>; }
+import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
+import { time } from "../utils/format";
+export function Status({ value }: { value: string }) {
+  const tone = ["ONLINE", "INSTALLED", "COMPLETED"].includes(value)
+    ? "success"
+    : ["FAILED", "OFFLINE"].includes(value)
+      ? "danger"
+      : value === "PAUSED"
+        ? "warning"
+        : ["RUNNING", "DOWNLOADING", "DOWNLOADED", "INSTALLING"].includes(value)
+          ? "active"
+          : "neutral";
+  return (
+    <span className={`status ${tone}`}>
+      <span aria-hidden="true" className="dot" />
+      {value.replaceAll("_", " ")}
+    </span>
+  );
+}
+export function Header({
+  eyebrow,
+  title,
+  description,
+  actions,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  actions?: ReactNode;
+}) {
+  return (
+    <header className="page-header">
+      <div>
+        <p className="eyebrow">{eyebrow}</p>
+        <h1>{title}</h1>
+        <p className="muted">{description}</p>
+      </div>
+      <div className="actions">{actions}</div>
+    </header>
+  );
+}
+export function Panel({
+  label,
+  title,
+  children,
+  dark = false,
+  className = "",
+}: {
+  label: string;
+  title?: string;
+  children: ReactNode;
+  dark?: boolean;
+  className?: string;
+}) {
+  return (
+    <section className={`panel ${dark ? "dark" : ""} ${className}`}>
+      <p className="eyebrow">{label}</p>
+      {title && <h2>{title}</h2>}
+      {children}
+    </section>
+  );
+}
+export function Empty({
+  title,
+  children,
+  to,
+  action,
+}: {
+  title: string;
+  children: ReactNode;
+  to?: string;
+  action?: string;
+}) {
+  return (
+    <div className="empty">
+      <h2>{title}</h2>
+      <p className="muted">{children}</p>
+      {to && (
+        <Link className="button accent" to={to}>
+          {action}
+        </Link>
+      )}
+    </div>
+  );
+}
+export function Loading() {
+  return (
+    <div role="status" aria-label="Loading operator data" className="skeleton">
+      <div />
+      <div />
+      <div />
+      <p>Loading control plane data…</p>
+    </div>
+  );
+}
+export function ErrorState({
+  message,
+  retry,
+  stale = false,
+}: {
+  message?: string;
+  retry: () => void;
+  stale?: boolean;
+}) {
+  return message ? (
+    <div role="alert" className="notice danger">
+      <strong>
+        {stale ? "Showing last received data. " : ""}
+        {message}
+      </strong>
+      <button onClick={retry}>Retry</button>
+    </div>
+  ) : null;
+}
+export function Timestamp({ value }: { value: string | null }) {
+  return (
+    <time
+      title={value ?? "No heartbeat received"}
+      dateTime={value ?? undefined}
+    >
+      {time(value)}
+    </time>
+  );
+}
+export function Meta({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="meta">
+      <span className="muted">{label}</span>
+      <div>{children}</div>
+    </div>
+  );
+}
+export function Freshness({ value }: { value?: Date }) {
+  return (
+    <p className="freshness">
+      {value
+        ? `Updated ${value.toLocaleTimeString()} · refreshes every 8 seconds`
+        : "Connecting to control plane"}{" "}
+      · {Intl.DateTimeFormat().resolvedOptions().timeZone}
+    </p>
+  );
+}

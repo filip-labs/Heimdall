@@ -119,6 +119,21 @@ class RolloutIntegrationTest {
                 .map(RolloutStageResponse::targetVehicleCount)
                 .toList());
         assertEquals(2, stages.get(0).deploymentCount());
+        DeploymentResponse[] linked = restClient.get().uri("/api/v1/deployments")
+                .exchange().expectStatus().isOk().expectBody(DeploymentResponse[].class)
+                .returnResult().getResponseBody();
+        assertNotNull(linked);
+        assertEquals(2, linked.length);
+        for (DeploymentResponse deployment : linked) {
+            assertEquals(rollout.id(), deployment.rolloutId());
+            assertEquals(stages.get(0).id(), deployment.rolloutStageId());
+            DeploymentResponse detail = restClient.get().uri("/api/v1/deployments/" + deployment.id())
+                    .exchange().expectStatus().isOk().expectBody(DeploymentResponse.class)
+                    .returnResult().getResponseBody();
+            assertNotNull(detail);
+            assertEquals(deployment.rolloutId(), detail.rolloutId());
+            assertEquals(deployment.rolloutStageId(), detail.rolloutStageId());
+        }
         assertEquals(0, stages.get(1).deploymentCount());
         assertEquals(0, stages.get(2).deploymentCount());
 
