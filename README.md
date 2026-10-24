@@ -240,46 +240,100 @@ fleet PKI are intentionally deferred.
 
 ## Running Locally
 
-Start PostgreSQL, Kafka, Prometheus, and Grafana:
+The full Compose stack is a local engineering environment: Heimdall, PostgreSQL,
+Kafka, Prometheus and Grafana. It requires Docker Compose with BuildKit plus
+Bash/OpenSSL for the one-time local key setup. It does not provide production
+secret delivery, TLS termination, mTLS or production PKI.
+
+### Full core stack
+
+Prepare random local-development keys in an ignored `.env`, then start the stack:
 
 ```bash
-docker compose up -d
+bash scripts/dev/generate-compose-env.sh
+docker compose up --build
 ```
 
-The local database is exposed as:
+The helper refuses to overwrite an existing file, creates it with mode 600,
+prints no keys and removes temporary key files. `.env.example` documents the
+variables without usable secrets; alternatively populate an ignored `.env` with
+externally supplied values. The three backend signing variables are required:
+Compose fails clearly if they are missing or empty. No application default keys
+or build-time secrets are introduced. `.env` is excluded from Git and the Docker
+build context. Do not share rendered `docker compose config` output: it contains
+runtime secrets; use `docker compose config --quiet` for routine validation.
 
-```text
-localhost:5433 -> container:5432
-database: heimdall
-username: heimdall
-password: heimdall
-```
+Heimdall waits for PostgreSQL and Kafka healthchecks and inherits the Dockerfile's
+HTTP healthcheck. Prometheus starts independently and retries until Heimdall is
+ready. Grafana uses its existing provisioned datasource and dashboard.
 
-First generate/configure the backend Ed25519 signing key and simulator public key
-as described in [OTA security](docs/ota-security.md#local-key-generation-and-configuration).
-Start the Spring Boot control plane with its separate vehicle-token signing key (see
-[Vehicle identity](docs/vehicle-identity.md) for key management):
+| Service | Host URL/port | Internal endpoint |
+| --- | --- | --- |
+| Heimdall | `http://localhost:8080` | `heimdall:8080` |
+| PostgreSQL | `localhost:5433` | `postgres:5432` |
+| Kafka | `localhost:9092` | `kafka:29092` |
+| Prometheus | `http://localhost:9090` | `prometheus:9090` |
+| Grafana | `http://localhost:3000` | `grafana:3000` |
 
 ```bash
-export HEIMDALL_SECURITY_VEHICLE_TOKEN_SECRET="$(openssl rand -base64 32)"
+docker compose ps
+curl --fail http://localhost:8080/actuator/health
+docker compose down
+```
+
+Health should return HTTP 200 with `status: UP`. The backend has a 60-second
+stop grace period for Kafka and Spring shutdown. `down` preserves the named
+PostgreSQL volume `heimdall_postgres_data`; a subsequent `up --build` reuses it.
+Avoid `down -v` unless intentionally deleting disposable data.
+
+### Direct host development
+
+After preparing `.env` as above, run just the dependencies and export the generated
+keys for the host process (Compose reads `.env` automatically; Java/Go do not):
+
+```bash
+docker compose up -d postgres kafka
+set -a
+. ./.env
+set +a
 ./mvnw spring-boot:run
 ```
 
-Start the simulator:
+The host backend retains PostgreSQL `localhost:5433` (database/user/password
+`heimdall`) and Kafka `localhost:9092` defaults. Stop the Compose backend before
+running a host backend on port 8080. Provisioned observability targets the Compose
+service `heimdall:8080`; it does not scrape a backend running on the host.
+Use the backend's direct `/actuator/prometheus` endpoint during host development.
+
+### Simulator
+
+With the generated environment exported as above and the backend healthy:
 
 ```bash
-cd simulator
-FLEET_SIZE=100 go run .
+(
+  unset HEIMDALL_SECURITY_VEHICLE_TOKEN_SECRET HEIMDALL_SECURITY_VEHICLE_TOKEN_TTL
+  unset HEIMDALL_SECURITY_RELEASE_SIGNING_PRIVATE_KEY HEIMDALL_SECURITY_RELEASE_SIGNING_KEY_ID
+  cd simulator
+  FLEET_SIZE=100 go run .
+)
 ```
 
-Run repeatable HTTP load scenarios with k6:
+Only the public OTA key/key ID are needed by the simulator; never distribute the
+backend private keys to vehicles. Its default URL is `http://localhost:8080`.
+Repeat fleet provisioning needs fresh disposable vehicle state: credentials live
+only in memory, and existing VINs cannot be provisioned again after a simulator
+restart. See [vehicle identity](docs/vehicle-identity.md) and
+[OTA security](docs/ota-security.md) for details.
 
-```bash
-PROFILE=100 RUN_ID=1001 k6 run load-tests/k6/mixed-fleet.js
-```
+An optional simulator Compose profile was evaluated and deferred. It would need
+another image build, public-key delivery and an explicit fresh-state lifecycle;
+a restart against the persistent database would fail duplicate VIN provisioning.
+The host Go workflow keeps those concerns explicit without complicating the core
+stack.
 
-See [Scalability and load testing](docs/scalability-and-load-testing.md) for the
-100/1,000/5,000 profiles, isolated workloads, metrics, and interpretation.
+Historical k6 load scenarios and measurement constraints are documented in
+[Scalability and load testing](docs/scalability-and-load-testing.md). They predate
+M11 authentication and are not a current full-stack performance claim.
 
 ## Backend container image (M12A)
 
@@ -315,10 +369,11 @@ reachable dependency endpoints supplied through the environment:
 Generate/configure security keys using the linked M11 setup instructions above.
 Supply secrets at runtime, never as build arguments or committed files. Existing
 Spring environment binding, including `HEIMDALL_KAFKA_ENABLED`, remains available.
-For a manual run, export the variables above and pass them without literal secrets:
+For a standalone manual run, keep the Compose `heimdall` service stopped, export
+the variables above and pass them without literal secrets:
 
 ```bash
-docker run --rm --name heimdall-backend --network heimdall_default \
+docker run --rm --name heimdall-backend-manual --network heimdall_default \
   -p 8080:8080 \
   -e SPRING_DATASOURCE_URL -e SPRING_DATASOURCE_USERNAME \
   -e SPRING_DATASOURCE_PASSWORD -e SPRING_KAFKA_BOOTSTRAP_SERVERS \
@@ -334,12 +389,12 @@ actual Compose network name if your project name differs from `heimdall`.
 The image exposes port 8080. Its health contract is HTTP **200** from
 `/actuator/health`; the Docker healthcheck uses curl already present in the
 Temurin runtime, with a 60-second startup allowance. Only `health`, `info` and
-`prometheus` remain exposed. `docker stop --time 60 heimdall-backend` delivers
+`prometheus` remain exposed. `docker stop --time 60 heimdall-backend-manual` delivers
 SIGTERM directly to Java and allows time for Kafka and Spring's graceful shutdown.
 
-The backend is not yet a Compose service. Full-stack Compose integration and
-observability networking belong to M12B; container CI and publishing belong to
-M12C. The existing Compose and CI workflows are unchanged.
+The full-stack Compose workflow above builds this same image. Container build,
+integration smoke CI and image publishing remain deferred to M12C; existing
+GitHub Actions are unchanged.
 
 ## Observability
 
@@ -352,9 +407,10 @@ http://localhost:8080/actuator/info
 http://localhost:8080/actuator/prometheus
 ```
 
-Prometheus scrapes the host control plane every five seconds. Its local UI is
-available at `http://localhost:9090`; the `heimdall` target should become `UP`
-after the Spring Boot application starts.
+Prometheus scrapes the Heimdall Compose service at `heimdall:8080` every five
+seconds through `/actuator/prometheus`, entirely on the Compose network. Its UI
+is available at `http://localhost:9090`; the `heimdall` target becomes `UP` once
+the backend is ready. No host bridge is required.
 
 Grafana is provisioned without manual setup at `http://localhost:3000`. Open
 the `Heimdall / Heimdall Overview` dashboard to inspect:

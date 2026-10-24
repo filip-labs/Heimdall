@@ -42,6 +42,30 @@ services:
       timeout: 10s
       retries: 12
 
+  heimdall:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: heimdall:local
+    container_name: heimdall-backend
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/heimdall
+      SPRING_DATASOURCE_USERNAME: heimdall
+      SPRING_DATASOURCE_PASSWORD: heimdall
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      HEIMDALL_SECURITY_VEHICLE_TOKEN_SECRET: ${HEIMDALL_SECURITY_VEHICLE_TOKEN_SECRET:?Run scripts/dev/generate-compose-env.sh first}
+      HEIMDALL_SECURITY_VEHICLE_TOKEN_TTL: ${HEIMDALL_SECURITY_VEHICLE_TOKEN_TTL:-5m}
+      HEIMDALL_SECURITY_RELEASE_SIGNING_PRIVATE_KEY: ${HEIMDALL_SECURITY_RELEASE_SIGNING_PRIVATE_KEY:?Run scripts/dev/generate-compose-env.sh first}
+      HEIMDALL_SECURITY_RELEASE_SIGNING_KEY_ID: ${HEIMDALL_SECURITY_RELEASE_SIGNING_KEY_ID:?Run scripts/dev/generate-compose-env.sh first}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    stop_grace_period: 60s
+
   prometheus:
     image: prom/prometheus:v3.5.0
     container_name: heimdall-prometheus
@@ -49,8 +73,6 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
     ports:
       - "9090:9090"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
 
